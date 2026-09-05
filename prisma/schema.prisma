@@ -1,0 +1,187 @@
+// GreenGrid database schema.
+// All timestamps are stored in UTC. Timezone-aware logic lives in the app layer.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+  runtime  = "nodejs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Automation defaults, applied when creating new schedules.
+  defaultTimezone     String @default("UTC")
+  defaultCommitMessage String @default("chore: update GreenGrid activity")
+
+  githubAccount GitHubAccount?
+  sessions      Session[]
+  repositories  Repository[]
+  schedules     Schedule[]
+
+  @@map("users")
+}
+
+model GitHubAccount {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  githubUserId String  @unique
+  username     String
+  displayName  String?
+  avatarUrl    String?
+  email        String?
+
+  // AES-256-GCM ciphertext. Never leaves the server.
+  accessTokenEncrypted  String
+  refreshTokenEncrypted String?
+  tokenExpiresAt        DateTime?
+  scopes                String[] @default([])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([username])
+  @@map("github_accounts")
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  // SHA-256 of the opaque session token. The raw token only exists in the cookie.
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  userAgent String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("sessions")
+}
+
+model Repository {
+  id     String @id @default(cuid())
+  userId String
+
+  githubRepositoryId String
+  owner              String
+  name               String
+  fullName           String
+  defaultBranch      String
+  private            Boolean @default(false)
+  archived           Boolean @default(false)
+  canPush            Boolean @default(false)
+  selected           Boolean @default(false)
+
+  htmlUrl        String?
+  lastActivityAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schedules  Schedule[]
+  executions ActivityExecution[]
+
+  @@unique([userId, githubRepositoryId])
+  @@index([userId, selected])
+  @@map("repositories")
+}
+
+model Schedule {
+  id           String  @id @default(cuid())
+  userId       String
+  repositoryId String
+
+  enabled       Boolean  @default(false)
+  timezone      String   @default("UTC")
+  // 1-20. Commits are spread one per hour across the local day; the exact
+  // slot times are derived, never chosen by the user. See lib/schedule/slots.ts.
+  commitsPerDay Int      @default(1)
+  daysOfWeek    Weekday[]
+  commitMessage String   @default("chore: update GreenGrid activity")
+  activityPath  String   @default(".greengrid/activity.json")
+
+  lastRunAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user       User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  repository Repository          @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  executions ActivityExecution[]
+
+  @@index([userId])
+  @@index([enabled])
+  @@index([repositoryId])
+  @@map("schedules")
+}
+
+model ActivityExecution {
+  id           String @id @default(cuid())
+  scheduleId   String?
+  repositoryId String
+  userId       String
+
+  // Local calendar day the run belongs to, as "YYYY-MM-DD" in the schedule timezone.
+  scheduledDay String
+
+  // "<scheduleId>:<scheduledDay>:<slotIndex>" for cron runs, NULL for manual runs.
+  // A unique index makes duplicate scheduled execution impossible at the DB level;
+  // Postgres allows many NULLs, so manual runs are never blocked.
+  idempotencyKey String? @unique
+  scheduledFor DateTime
+  executedAt   DateTime?
+  durationMs   Int?
+
+  status       ExecutionStatus @default(PENDING)
+  trigger      ExecutionTrigger @default(SCHEDULED)
+  commitSha    String?
+  commitUrl    String?
+  commitMessage String?
+  errorCode    String?
+  errorMessage String?
+
+  createdAt DateTime @default(now())
+
+  schedule   Schedule?  @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  repository Repository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+
+  @@index([userId, scheduledFor])
+  @@index([scheduleId, scheduledDay])
+  @@index([repositoryId])
+  @@index([status])
+  @@map("activity_executions")
+}
+
+enum Weekday {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+enum ExecutionStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  SKIPPED
+}
+
+enum ExecutionTrigger {
+  SCHEDULED
+  MANUAL
+}
