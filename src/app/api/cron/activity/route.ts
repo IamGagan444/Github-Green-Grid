@@ -9,7 +9,9 @@ import { pruneExpiredSessions } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-export const maxDuration = 300;
+// Vercel's Hobby plan caps function duration at 60s; higher values are only
+// honoured on paid plans. The batch is bounded by the number of due slots.
+export const maxDuration = 60;
 
 interface CronSummary {
   processed: number;

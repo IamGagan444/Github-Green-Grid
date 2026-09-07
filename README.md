@@ -394,7 +394,20 @@ jobs:
 3. Set the build command to `npm run build` — it runs `prisma generate` first.
 4. Apply migrations against the production database:
    `DATABASE_URL=... npx prisma migrate deploy`.
-5. `vercel.json` already registers the cron job:
+5. Set up the scheduler. `vercel.json` ships with `"crons": []` on purpose:
+   Vercel's Hobby plan runs cron jobs **at most once per day**, which would cap
+   the app at one commit per day regardless of `commitsPerDay`. The scheduler
+   therefore lives in GitHub Actions
+   (`.github/workflows/main.yml`), which polls every 15 minutes. Add two
+   repository secrets under **Settings → Secrets and variables → Actions**:
+
+   | Secret        | Value                                             |
+   | ------------- | ------------------------------------------------- |
+   | `APP_URL`     | your deployed origin, no trailing slash           |
+   | `CRON_SECRET` | the same value as the Vercel environment variable |
+
+   On a paid Vercel plan you can use Vercel Cron instead by putting the job back
+   in `vercel.json` and deleting the workflow:
 
    ```json
    { "crons": [{ "path": "/api/cron/activity", "schedule": "*/15 * * * *" }] }
@@ -405,10 +418,9 @@ jobs:
 6. Update your GitHub OAuth App's callback URL to
    `https://<your-domain>/api/auth/github/callback`.
 
-Hobby-plan note: Vercel Cron runs at most once per day on the Hobby tier, which
-caps you at one commit per day regardless of `commitsPerDay`. Use an external
-scheduler (GitHub Actions, cron-job.org, Upstash QStash) or upgrade to Pro for
-anything more frequent.
+Hobby-plan note: Vercel Cron runs at most once per day on the Hobby tier and
+caps function duration at 60 seconds. That is why the shipped scheduler is the
+GitHub Actions workflow above rather than a Vercel cron entry.
 
 ## Testing
 

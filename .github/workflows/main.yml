@@ -1,29 +1,57 @@
-name: GreenGrid Auto Commit
+name: GreenGrid scheduler
+
+# Triggers GreenGrid's cron endpoint, which decides which schedules are due and
+# creates the commits through the GitHub API.
+#
+# This lives in GitHub Actions rather than vercel.json because Vercel's Hobby
+# plan runs cron jobs at most once per day, which caps the app at one commit per
+# day. Commit slots are one hour apart, so the endpoint must be polled at least
+# hourly.
+#
+# Required repository secrets (Settings -> Secrets and variables -> Actions):
+#   APP_URL      https://greendot.gaganpallai.in   (no trailing slash)
+#   CRON_SECRET  the same value as the Vercel environment variable
 
 on:
   schedule:
-    - cron: "0 3,5,7,9,11,13,15,17,19,21 * * *"
+    # Every 15 minutes. GitHub queues scheduled runs and may delay them under
+    # load; the endpoint's 90-minute grace window absorbs that.
+    - cron: "*/15 * * * *"
   workflow_dispatch:
 
-permissions:
-  contents: write
+# The workflow only makes an outbound request; it needs no repository access.
+permissions: {}
+
+concurrency:
+  group: greengrid-scheduler
+  cancel-in-progress: false
 
 jobs:
-  update:
+  trigger:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Update files
+      - name: Trigger scheduled activity
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          echo "GreenGrid automated update"
+          set -euo pipefail
 
-      - name: Commit changes
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .
-          git diff --cached --quiet || git commit -m "chore: automated update"
-          git push
+          if [ -z "${APP_URL}" ] || [ -z "${CRON_SECRET}" ]; then
+            echo "::error::APP_URL and CRON_SECRET repository secrets must be set."
+            exit 1
+          fi
+
+          # --fail-with-body so a non-2xx status fails the step but still prints
+          # the API's error message. The secret is passed via a header, never a URL.
+          curl --silent --show-error --fail-with-body \
+            --max-time 120 \
+            --request POST "${APP_URL%/}/api/cron/activity" \
+            --header "Authorization: Bearer ${CRON_SECRET}" \
+            --header "Content-Type: application/json" \
+            --output response.json
+
+          echo "Cron summary:"
+          cat response.json
