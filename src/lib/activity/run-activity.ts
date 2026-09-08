@@ -177,6 +177,10 @@ export async function runScheduledActivity(request: RunRequest): Promise<RunOutc
       scheduleId: schedule.id,
       code: apiError.code,
       status: apiError.status,
+      // Distinguishes the causes that share one user-facing message — a real
+      // GitHub 401 vs. a credential that could not be decrypted or has expired.
+      // These strings are constructed by GreenGrid and never contain the token.
+      detail: apiError.message,
     });
 
     return await recordFailure(
