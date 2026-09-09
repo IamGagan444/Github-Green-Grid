@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { prisma } from "@/lib/db";
 import { encryptSecret, safeCompare } from "@/lib/encryption";
-import { getAppUrl, getEnv } from "@/lib/env";
+import { getAppUrl } from "@/lib/env";
 import { exchangeOAuthCode } from "@/lib/github/github-client";
 import { fetchProfileWithToken } from "@/lib/github/github-user";
 import { getRedirectUri, sanitiseReturnTo } from "@/lib/github/oauth";
@@ -33,13 +33,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const env = getEnv();
-    const { accessToken, scopes, expiresInSeconds } = await exchangeOAuthCode(
-      code,
-      env.GITHUB_CLIENT_ID,
-      env.GITHUB_CLIENT_SECRET,
-      getRedirectUri(),
-    );
+    const { accessToken, scopes, expiresInSeconds, refreshToken } =
+      await exchangeOAuthCode(code, getRedirectUri());
 
     const profile = await fetchProfileWithToken(accessToken);
 
@@ -49,6 +44,9 @@ export async function GET(request: NextRequest) {
       avatarUrl: profile.avatarUrl,
       email: profile.email,
       accessTokenEncrypted: encryptSecret(accessToken),
+      // Stored so an expiring access token can be renewed without the user
+      // having to reconnect GitHub.
+      refreshTokenEncrypted: refreshToken ? encryptSecret(refreshToken) : null,
       scopes,
       tokenExpiresAt: expiresInSeconds
         ? new Date(Date.now() + expiresInSeconds * 1000)

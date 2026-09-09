@@ -75,8 +75,8 @@ export default async function LandingPage() {
             <div className="mt-7 flex flex-wrap gap-3">
               <Button asChild size="lg">
                 <Link href={user ? "/dashboard" : "/login"}>
-                  <GithubIcon className="size-4" />
-                  Continue with GitHub
+                  {user ? null : <GithubIcon className="size-4" />}
+                  {user ? "Open dashboard" : "Continue with GitHub"}
                 </Link>
               </Button>
               <Button asChild size="lg" variant="outline">
@@ -157,8 +157,8 @@ export default async function LandingPage() {
         <div className="mt-8">
           <Button asChild>
             <Link href={user ? "/dashboard" : "/login"}>
-              <GithubIcon className="size-4" />
-              Continue with GitHub
+              {user ? null : <GithubIcon className="size-4" />}
+              {user ? "Open dashboard" : "Continue with GitHub"}
             </Link>
           </Button>
         </div>
