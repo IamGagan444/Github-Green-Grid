@@ -3,13 +3,14 @@ import Link from "next/link";
 import { Suspense } from "react";
 import { CheckCircle2, GitBranch, ShieldAlert } from "lucide-react";
 
+import { GitHubRequiredNotice } from "@/components/integrations/github-required-notice";
 import { Header } from "@/components/layout/header";
 import { RepositorySelector } from "@/components/repositories/repository-selector";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { RepositorySkeleton } from "@/components/ui/skeletons";
-import { requireSessionUser } from "@/lib/auth";
+import { requireUser } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
 import { getSelectedRepository, listStoredRepositories } from "@/lib/services/repositories";
 
@@ -17,18 +18,13 @@ export const metadata: Metadata = { title: "Repositories" };
 export const dynamic = "force-dynamic";
 
 export default async function RepositoriesPage() {
-  const user = await requireSessionUser();
+  const user = await requireUser();
 
   return (
     <>
       <Header
         title="Repositories"
         description="Choose exactly which repository GreenGrid is allowed to update."
-        profile={{
-          username: user.username,
-          displayName: user.displayName,
-          avatarUrl: user.avatarUrl,
-        }}
         actions={
           <Button asChild variant="outline">
             <Link href="/dashboard/schedule">Configure schedule</Link>
@@ -37,6 +33,8 @@ export default async function RepositoriesPage() {
       />
 
       <div className="flex flex-col gap-5 px-4 py-6 sm:px-6">
+        <GitHubRequiredNotice userId={user.userId} returnTo="/dashboard/repositories" />
+
         <Suspense fallback={<RepositorySkeleton />}>
           <RepositoriesContent userId={user.userId} />
         </Suspense>

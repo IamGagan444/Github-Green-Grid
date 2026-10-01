@@ -90,10 +90,18 @@ export const manualRunSchema = z.object({
   scheduleId: z.string().min(1),
 });
 
-export const settingsSchema = z.object({
-  defaultTimezone: timezoneSchema,
-  defaultCommitMessage: commitMessageSchema,
-});
+export const settingsSchema = z
+  .object({
+    defaultTimezone: timezoneSchema,
+    defaultCommitMessage: commitMessageSchema,
+    defaultScheduleTime: z
+      .string()
+      .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use 24-hour HH:MM time.")
+      .optional(),
+    defaultDaysOfWeek: daysOfWeekSchema.optional(),
+    defaultMessageStyle: z.enum(["CONCISE", "DETAILED", "TECHNICAL", "NON_TECHNICAL"]).optional(),
+  })
+  .strict();
 
 export const activityQuerySchema = z.object({
   status: z.enum(["ALL", "COMPLETED", "FAILED", "SKIPPED"]).optional().default("ALL"),

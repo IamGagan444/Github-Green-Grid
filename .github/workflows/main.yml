@@ -1,7 +1,10 @@
 name: GreenGrid scheduler
 
-# Triggers GreenGrid's cron endpoint, which decides which schedules are due and
-# creates the commits through the GitHub API.
+# Triggers GreenGrid's cron endpoints:
+#   /api/cron/activity   commit-activity schedules (hourly slots)
+#   /api/cron/standups   GitHub -> Slack standup automations
+# Each endpoint decides what is due in every user's own timezone. Both are
+# idempotent, so late, repeated or overlapping triggers never double-post.
 #
 # This lives in GitHub Actions rather than vercel.json because Vercel's Hobby
 # plan runs cron jobs at most once per day, which caps the app at one commit per
@@ -46,12 +49,16 @@ jobs:
 
           # --fail-with-body so a non-2xx status fails the step but still prints
           # the API's error message. The secret is passed via a header, never a URL.
-          curl --silent --show-error --fail-with-body \
-            --max-time 120 \
-            --request POST "${APP_URL%/}/api/cron/activity" \
-            --header "Authorization: Bearer ${CRON_SECRET}" \
-            --header "Content-Type: application/json" \
-            --output response.json
-
-          echo "Cron summary:"
-          cat response.json
+          # Both endpoints run even if the first fails; the step fails afterwards.
+          status=0
+          for endpoint in activity standups; do
+            echo "Triggering /api/cron/${endpoint}"
+            curl --silent --show-error --fail-with-body \
+              --max-time 120 \
+              --request POST "${APP_URL%/}/api/cron/${endpoint}" \
+              --header "Authorization: Bearer ${CRON_SECRET}" \
+              --header "Content-Type: application/json" \
+              || status=1
+            echo
+          done
+          exit "${status}"

@@ -1,78 +1,51 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { prisma } from "@/lib/db";
-import { encryptSecret, safeCompare } from "@/lib/encryption";
+import { getCurrentUser } from "@/lib/auth/session";
 import { getAppUrl } from "@/lib/env";
 import { exchangeOAuthCode } from "@/lib/github/github-client";
 import { fetchProfileWithToken } from "@/lib/github/github-user";
-import { getRedirectUri, sanitiseReturnTo } from "@/lib/github/oauth";
-import { consumeOAuthStateCookie, createSession } from "@/lib/session";
+import { getRedirectUri } from "@/lib/github/oauth";
+import { createLogger } from "@/lib/logging/logger";
+import { consumeOAuthState } from "@/lib/oauth-state";
+import { connectGitHub } from "@/services/github-service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-function loginRedirect(reason: string): NextResponse {
-  return NextResponse.redirect(`${getAppUrl()}/login?error=${reason}`);
-}
+const log = createLogger("github-callback");
 
 /**
- * Completes the OAuth flow: validates state (CSRF), exchanges the code,
- * upserts the account with an encrypted token, and opens a server session.
+ * GitHub App authorization callback. This path is kept at
+ * /api/auth/github/callback so the callback URL registered on existing GitHub
+ * Apps keeps working; it now *connects an integration* for the signed-in user
+ * rather than signing anyone in.
  */
 export async function GET(request: NextRequest) {
-  const { state: expectedState, returnTo } = await consumeOAuthStateCookie();
+  const appUrl = getAppUrl();
+  const user = await getCurrentUser();
+  if (!user) return NextResponse.redirect(`${appUrl}/login`);
 
-  const code = request.nextUrl.searchParams.get("code");
-  const receivedState = request.nextUrl.searchParams.get("state");
-  const oauthError = request.nextUrl.searchParams.get("error");
+  const params = request.nextUrl.searchParams;
+  const check = await consumeOAuthState("github", params.get("state"), user.userId);
+  const back = (status: string) => {
+    const url = new URL(check.returnTo, appUrl);
+    url.searchParams.set("github", status);
+    return NextResponse.redirect(url);
+  };
 
-  if (oauthError) return loginRedirect("access_denied");
-  if (!code || !receivedState) return loginRedirect("invalid_request");
-  if (!expectedState || !safeCompare(expectedState, receivedState)) {
-    return loginRedirect("invalid_state");
-  }
+  if (params.get("error")) return back("access_denied");
+  if (!check.valid) return back(check.reason);
+
+  const code = params.get("code");
+  if (!code) return back("invalid_request");
 
   try {
-    const { accessToken, scopes, expiresInSeconds, refreshToken } =
-      await exchangeOAuthCode(code, getRedirectUri());
-
-    const profile = await fetchProfileWithToken(accessToken);
-
-    const accountData = {
-      username: profile.username,
-      displayName: profile.displayName,
-      avatarUrl: profile.avatarUrl,
-      email: profile.email,
-      accessTokenEncrypted: encryptSecret(accessToken),
-      // Stored so an expiring access token can be renewed without the user
-      // having to reconnect GitHub.
-      refreshTokenEncrypted: refreshToken ? encryptSecret(refreshToken) : null,
-      scopes,
-      tokenExpiresAt: expiresInSeconds
-        ? new Date(Date.now() + expiresInSeconds * 1000)
-        : null,
-    };
-
-    const existing = await prisma.gitHubAccount.findUnique({
-      where: { githubUserId: profile.githubUserId },
-      select: { userId: true },
-    });
-
-    const userId = existing
-      ? existing.userId
-      : (await prisma.user.create({ data: {}, select: { id: true } })).id;
-
-    await prisma.gitHubAccount.upsert({
-      where: { githubUserId: profile.githubUserId },
-      create: { ...accountData, githubUserId: profile.githubUserId, userId },
-      update: accountData,
-    });
-
-    await createSession(userId, request.headers.get("user-agent") ?? undefined);
-
-    return NextResponse.redirect(`${getAppUrl()}${sanitiseReturnTo(returnTo)}`);
+    const tokens = await exchangeOAuthCode(code, getRedirectUri());
+    const profile = await fetchProfileWithToken(tokens.accessToken);
+    const outcome = await connectGitHub(user.userId, profile, tokens);
+    return back(outcome === "linked_elsewhere" ? "linked_elsewhere" : "connected");
   } catch (error) {
-    console.error("[auth/callback] GitHub sign-in failed", error);
-    return loginRedirect("connection_failed");
+    log.error("GitHub connection failed", { error: error as Error });
+    return back("connection_failed");
   }
 }

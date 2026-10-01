@@ -1,15 +1,18 @@
 import type { Metadata, Viewport } from "next";
 
+import { THEME_INIT_SCRIPT } from "@/components/layout/theme-script";
+import { QueryProvider } from "@/components/providers/query-provider";
+import { StoreProvider } from "@/components/providers/store-provider";
 import { Toaster } from "@/components/ui/toaster";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "GreenGrid — Keep your GitHub activity consistent",
+    default: "GreenGrid — GitHub activity and daily standups, automated",
     template: "%s · GreenGrid",
   },
   description:
-    "Automate lightweight repository maintenance on your schedule using GitHub's official APIs.",
+    "Turn your GitHub commits into AI-written daily standup updates in Slack, and automate lightweight repository maintenance.",
   applicationName: "GreenGrid",
   robots: { index: true, follow: true },
   manifest: "/site.webmanifest",
@@ -31,9 +34,12 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    // GreenGrid ships dark-first; the token set in globals.css also defines a
-    // light palette so the theme can be switched without touching components.
-    <html lang="en" className="dark" suppressHydrationWarning>
+    // The theme class is set before paint by THEME_INIT_SCRIPT (stored choice,
+    // else OS preference); suppressHydrationWarning covers that attribute.
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body className="min-h-dvh bg-background text-foreground">
         <a
           href="#main"
@@ -41,7 +47,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         >
           Skip to content
         </a>
-        {children}
+        <StoreProvider>
+          <QueryProvider>{children}</QueryProvider>
+        </StoreProvider>
         <Toaster />
       </body>
     </html>

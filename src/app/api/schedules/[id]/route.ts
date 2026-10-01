@@ -1,8 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { ApiError, handleApiError, readJson, requireApiUser } from "@/lib/api";
+import { assertSameOrigin, ApiError, handleApiError, readJson, requireApiUser } from "@/lib/api";
 import { rateLimit, rateLimitHeaders, RATE_LIMITS } from "@/lib/rate-limit";
-import { deleteSchedule, getOwnedSchedule, updateSchedule } from "@/lib/services/schedules";
+import { getOwnedSchedule, updateSchedule } from "@/lib/services/schedules";
 import { updateScheduleSchema } from "@/lib/validation/schemas";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +22,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
   try {
+    assertSameOrigin(request);
     const user = await requireApiUser();
     const { id } = await context.params;
 
@@ -36,22 +37,5 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     return NextResponse.json({ schedule }, { headers: rateLimitHeaders(limit) });
   } catch (error) {
     return handleApiError(error, "api/schedules/[id]:PATCH");
-  }
-}
-
-export async function DELETE(_request: NextRequest, context: RouteContext) {
-  try {
-    const user = await requireApiUser();
-    const { id } = await context.params;
-
-    const limit = await rateLimit(`schedules:delete:${user.userId}`, RATE_LIMITS.scheduleWrite);
-    if (!limit.success) {
-      throw new ApiError("RATE_LIMITED", "Too many schedule changes. Try again shortly.");
-    }
-
-    await deleteSchedule(user.userId, id);
-    return NextResponse.json({ ok: true });
-  } catch (error) {
-    return handleApiError(error, "api/schedules/[id]:DELETE");
   }
 }

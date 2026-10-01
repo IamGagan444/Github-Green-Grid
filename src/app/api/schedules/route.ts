@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { ApiError, handleApiError, readJson, requireApiUser } from "@/lib/api";
+import { assertSameOrigin, ApiError, handleApiError, readJson, requireApiUser } from "@/lib/api";
 import { rateLimit, rateLimitHeaders, RATE_LIMITS } from "@/lib/rate-limit";
 import { createSchedule, listSchedules } from "@/lib/services/schedules";
 import { createScheduleSchema } from "@/lib/validation/schemas";
@@ -19,6 +19,7 @@ export async function GET() {
 
 export async function POST(request: NextRequest) {
   try {
+    assertSameOrigin(request);
     const user = await requireApiUser();
 
     const limit = await rateLimit(`schedules:create:${user.userId}`, RATE_LIMITS.scheduleWrite);

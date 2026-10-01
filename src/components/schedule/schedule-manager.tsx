@@ -12,6 +12,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import type { ScheduleWithRepository } from "@/lib/services/schedules";
+import { useAppDispatch, useAppSelector } from "@/store/hooks";
+import { createSchedule, showScheduleList } from "@/store/slices/schedule-editor-slice";
 
 interface ScheduleManagerProps {
   schedules: ScheduleWithRepository[];
@@ -20,32 +22,35 @@ interface ScheduleManagerProps {
   defaults: { timezone: string; commitMessage: string; repositoryId: string | null };
 }
 
-type Mode =
-  | { kind: "list" }
-  | { kind: "create" }
-  | { kind: "edit"; schedule: ScheduleWithRepository };
-
-/** Switches between the schedule summary and the create/edit form. */
+/** Switches between the schedule summary and the create/edit form (mode lives in Redux). */
 export function ScheduleManager({
   schedules,
   repositories,
   timezones,
   defaults,
 }: ScheduleManagerProps) {
-  const [mode, setMode] = React.useState<Mode>({ kind: "list" });
+  const dispatch = useAppDispatch();
+  const mode = useAppSelector((state) => state.scheduleEditor.mode);
+  const editingId = useAppSelector((state) => state.scheduleEditor.scheduleId);
+
+  // Every visit to the page starts on the list.
+  React.useEffect(() => {
+    dispatch(showScheduleList());
+  }, [dispatch]);
 
   const hasWritableRepository = repositories.some(
     (repository) => repository.canPush && !repository.archived,
   );
+  const editing = mode === "edit" ? (schedules.find((schedule) => schedule.id === editingId) ?? null) : null;
 
-  if (mode.kind !== "list") {
+  if (mode === "create" || editing) {
     return (
       <ScheduleForm
         repositories={repositories}
         timezones={timezones}
-        schedule={mode.kind === "edit" ? mode.schedule : null}
+        schedule={editing}
         defaults={defaults}
-        onDone={() => setMode({ kind: "list" })}
+        onDone={() => dispatch(showScheduleList())}
       />
     );
   }
@@ -62,7 +67,7 @@ export function ScheduleManager({
         }
         action={
           hasWritableRepository ? (
-            <Button onClick={() => setMode({ kind: "create" })}>Create schedule</Button>
+            <Button onClick={() => dispatch(createSchedule())}>Create schedule</Button>
           ) : (
             <Button asChild>
               <Link href="/dashboard/repositories">Choose a repository</Link>
@@ -76,17 +81,13 @@ export function ScheduleManager({
   return (
     <div className="flex flex-col gap-4">
       {schedules.map((schedule) => (
-        <ScheduleCard
-          key={schedule.id}
-          schedule={schedule}
-          onEdit={(target) => setMode({ kind: "edit", schedule: target })}
-        />
+        <ScheduleCard key={schedule.id} schedule={schedule} />
       ))}
 
       <div>
         <Button
           variant="outline"
-          onClick={() => setMode({ kind: "create" })}
+          onClick={() => dispatch(createSchedule())}
           disabled={!hasWritableRepository}
         >
           Add another schedule

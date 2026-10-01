@@ -44,3 +44,43 @@ export interface RepositoryWriteCheck {
   reason?: string;
   defaultBranch?: string;
 }
+
+export interface GitHubBranchSummary {
+  name: string;
+  protected: boolean;
+}
+
+/** The fields of GitHub's commit list response that the standup pipeline reads. */
+export interface RawCommit {
+  sha: string;
+  html_url?: string;
+  parents?: Array<{ sha: string }>;
+  author?: { login?: string; id?: number } | null;
+  commit?: {
+    message?: string;
+    author?: { date?: string | null } | null;
+    committer?: { date?: string | null } | null;
+  };
+}
+
+export interface CommitQuery {
+  /** GitHub login of the connected user. */
+  authorLogin: string;
+  /** Numeric GitHub user id, as a string — matches even after a username change. */
+  authorId?: string;
+  /** Inclusive lower bound (UTC instant). */
+  since: Date;
+  /** Exclusive upper bound (UTC instant). */
+  until: Date;
+  includeFiles?: boolean;
+}
+
+export interface AuthoredCommit {
+  sha: string;
+  repository: string;
+  branch: string | null;
+  message: string;
+  url: string | null;
+  authoredAt: string;
+  stats: { additions: number; deletions: number; files: string[] } | null;
+}

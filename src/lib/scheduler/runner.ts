@@ -1,0 +1,136 @@
+import "server-only";
+
+import { MAX_ATTEMPTS } from "@/lib/automation/engine";
+import { prisma } from "@/lib/db";
+import { createLogger } from "@/lib/logging/logger";
+import { runWithBudget, selectDueAutomations, type DueItem } from "@/lib/scheduler/due";
+import { runAutomation } from "@/services/execution-service";
+
+const log = createLogger("scheduler");
+
+export interface SchedulerSummary {
+  processed: number;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+  retried: number;
+  deferred: number;
+  invalid: number;
+}
+
+const CONCURRENCY = 3;
+/** Leave headroom under the platform's function timeout. */
+const TIME_BUDGET_MS = 45_000;
+
+/**
+ * One scheduler tick:
+ *  1. Load ACTIVE automations whose owner is ACTIVE and whose GitHub and Slack
+ *     integrations are CONNECTED (disconnected integrations stop execution).
+ *  2. Select those due now in their own timezone and weekday.
+ *  3. Add failed executions whose retry time has arrived.
+ *  4. Execute with bounded concurrency inside a time budget. Anything not
+ *     reached is picked up by the next tick — idempotency keys make that safe.
+ */
+export async function processDueAutomations(now: Date = new Date()): Promise<SchedulerSummary> {
+  const cronRun = await prisma.cronRun.create({ data: { job: "standups", startedAt: now }, select: { id: true } });
+  const summary: SchedulerSummary = {
+    processed: 0,
+    succeeded: 0,
+    failed: 0,
+    skipped: 0,
+    retried: 0,
+    deferred: 0,
+    invalid: 0,
+  };
+
+  try {
+    const eligible = await prisma.automation.findMany({
+      where: {
+        status: "ACTIVE",
+        user: { status: "ACTIVE", githubIntegration: { status: "CONNECTED" } },
+        slackIntegration: { status: "CONNECTED" },
+      },
+      select: { id: true, daysOfWeek: true, scheduleTime: true, timezone: true },
+    });
+
+    const { due, invalid } = selectDueAutomations(eligible, now);
+    summary.invalid = invalid.length;
+    if (invalid.length > 0) log.warn("automations with invalid schedule skipped", { automationIds: invalid });
+
+    const retries = await prisma.execution.findMany({
+      where: {
+        status: "FAILED",
+        nextRetryAt: { lte: now },
+        attempt: { lt: MAX_ATTEMPTS },
+        automation: {
+          status: "ACTIVE",
+          user: { status: "ACTIVE", githubIntegration: { status: "CONNECTED" } },
+          slackIntegration: { status: "CONNECTED" },
+        },
+      },
+      select: { automationId: true, executionDate: true, scheduledFor: true },
+      take: 50,
+    });
+
+    const seen = new Set(due.map((item) => `${item.automationId}:${item.executionDate}`));
+    const work: Array<DueItem & { retry: boolean }> = due.map((item) => ({ ...item, retry: false }));
+    for (const retry of retries) {
+      if (!retry.automationId) continue;
+      const key = `${retry.automationId}:${retry.executionDate}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      work.push({
+        automationId: retry.automationId,
+        executionDate: retry.executionDate,
+        scheduledFor: retry.scheduledFor ?? now,
+        retry: true,
+      });
+    }
+
+    const { deferred } = await runWithBudget(
+      work,
+      async (item) => {
+        summary.processed += 1;
+        if (item.retry) summary.retried += 1;
+        try {
+          const outcome = await runAutomation({
+            automationId: item.automationId,
+            executionDate: item.executionDate,
+            trigger: "SCHEDULED",
+            scheduledFor: item.scheduledFor,
+            actorUserId: null,
+          });
+          if (outcome.status === "SUCCESS") summary.succeeded += 1;
+          else if (outcome.status === "FAILED") summary.failed += 1;
+          else summary.skipped += 1;
+        } catch (error) {
+          // One automation's failure never aborts the batch.
+          summary.failed += 1;
+          log.error("automation run threw", { automationId: item.automationId, error: error as Error });
+        }
+      },
+      { concurrency: CONCURRENCY, deadline: now.getTime() + TIME_BUDGET_MS },
+    );
+    summary.deferred = deferred;
+
+    await prisma.cronRun.update({
+      where: { id: cronRun.id },
+      data: {
+        finishedAt: new Date(),
+        processed: summary.processed,
+        succeeded: summary.succeeded,
+        failed: summary.failed,
+        skipped: summary.skipped,
+      },
+    });
+    return summary;
+  } catch (error) {
+    await prisma.cronRun
+      .update({
+        where: { id: cronRun.id },
+        data: { finishedAt: new Date(), error: error instanceof Error ? error.name : "unknown" },
+      })
+      .catch(() => undefined);
+    throw error;
+  }
+}

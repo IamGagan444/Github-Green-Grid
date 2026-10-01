@@ -2,10 +2,9 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { runScheduledActivity } from "@/lib/activity/run-activity";
 import { prisma } from "@/lib/db";
-import { safeCompare } from "@/lib/encryption";
-import { getEnv } from "@/lib/env";
 import { getDueOccurrences } from "@/lib/schedule/next-run";
-import { pruneExpiredSessions } from "@/lib/session";
+import { pruneExpiredSessions } from "@/lib/auth/maintenance";
+import { isCronAuthorised } from "@/lib/scheduler/cron-auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -20,26 +19,6 @@ interface CronSummary {
   skipped: number;
 }
 
-/**
- * Extracts the shared secret from either `Authorization: Bearer <secret>`
- * (the documented contract) or Vercel Cron's own `x-vercel-cron-signature`
- * header path, which is proxied through the same Bearer scheme.
- */
-function readCronSecret(request: NextRequest): string | null {
-  const header = request.headers.get("authorization");
-  if (!header) return null;
-
-  const [scheme, value] = header.split(" ");
-  if (scheme?.toLowerCase() !== "bearer" || !value) return null;
-  return value;
-}
-
-function isAuthorised(request: NextRequest): boolean {
-  const provided = readCronSecret(request);
-  if (!provided) return false;
-  return safeCompare(getEnv().CRON_SECRET, provided);
-}
-
 async function processDueSchedules(): Promise<CronSummary> {
   const now = new Date();
 
@@ -47,6 +26,8 @@ async function processDueSchedules(): Promise<CronSummary> {
     where: {
       enabled: true,
       repository: { archived: false, canPush: true },
+      // Disabled users and disconnected GitHub integrations never run.
+      user: { status: "ACTIVE", githubIntegration: { status: "CONNECTED" } },
     },
     select: {
       id: true,
@@ -93,7 +74,7 @@ async function processDueSchedules(): Promise<CronSummary> {
 
 /** POST is the documented entry point for external schedulers. */
 export async function POST(request: NextRequest) {
-  if (!isAuthorised(request)) {
+  if (!isCronAuthorised(request.headers)) {
     return NextResponse.json(
       { error: { code: "UNAUTHORIZED", message: "Invalid cron credentials." } },
       { status: 401 },

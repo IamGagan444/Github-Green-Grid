@@ -6,7 +6,7 @@ import { Check, ChevronsUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { formatUtcOffset } from "@/lib/schedule/timezone";
+import { timezoneLabel } from "@/lib/schedule/timezone";
 import { COMMON_TIMEZONES, searchTimezones } from "@/lib/schedule/timezone-search";
 import { cn } from "@/lib/utils";
 
@@ -63,11 +63,8 @@ export function TimezoneSelector({
           disabled={disabled}
           className="w-full justify-between font-normal"
         >
-          <span className="truncate">{value}</span>
-          <span className="flex items-center gap-2 text-xs text-muted-foreground">
-            {formatUtcOffset(value)}
-            <ChevronsUpDown className="size-4" aria-hidden="true" />
-          </span>
+          <span className="truncate">{timezoneLabel(value)}</span>
+          <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
         </Button>
       </PopoverTrigger>
 
@@ -111,13 +108,10 @@ export function TimezoneSelector({
                     zone === value && "bg-accent",
                   )}
                 >
-                  <span className="truncate">{zone}</span>
-                  <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-                    {formatUtcOffset(zone)}
-                    {zone === value ? (
-                      <Check className="size-3.5 text-primary" aria-hidden="true" />
-                    ) : null}
-                  </span>
+                  <span className="truncate">{timezoneLabel(zone)}</span>
+                  {zone === value ? (
+                    <Check className="size-3.5 shrink-0 text-primary" aria-hidden="true" />
+                  ) : null}
                 </button>
               </li>
             ))

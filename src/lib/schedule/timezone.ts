@@ -171,6 +171,97 @@ export function formatUtcOffset(timezone: string, instant: Date = new Date()): s
   return `UTC${sign}${hours}:${minutes}`;
 }
 
+const TIMEZONE_LABELS: Record<string, string> = {
+  UTC: "UTC",
+  "Etc/UTC": "UTC",
+  "Asia/Kolkata": "India (IST)",
+  "Asia/Calcutta": "India (IST)",
+  "Asia/Karachi": "Pakistan (PKT)",
+  "Asia/Dhaka": "Bangladesh (BDT)",
+  "Asia/Kathmandu": "Nepal (NPT)",
+  "Asia/Colombo": "Sri Lanka (SLST)",
+  "Asia/Dubai": "Dubai (GST)",
+  "Asia/Riyadh": "Saudi Arabia (AST)",
+  "Asia/Singapore": "Singapore (SGT)",
+  "Asia/Tokyo": "Tokyo (JST)",
+  "Asia/Seoul": "Seoul (KST)",
+  "Asia/Shanghai": "China (CST)",
+  "Asia/Hong_Kong": "Hong Kong (HKT)",
+  "Asia/Jakarta": "Jakarta (WIB)",
+  "Asia/Manila": "Philippines (PHT)",
+  "Asia/Bangkok": "Bangkok (ICT)",
+  "Asia/Ho_Chi_Minh": "Vietnam (ICT)",
+  "Europe/London": "London (GMT/BST)",
+  "Europe/Dublin": "Dublin (GMT/IST)",
+  "Europe/Lisbon": "Lisbon (WET)",
+  "Europe/Berlin": "Central Europe (CET)",
+  "Europe/Paris": "Paris (CET)",
+  "Europe/Madrid": "Madrid (CET)",
+  "Europe/Rome": "Rome (CET)",
+  "Europe/Amsterdam": "Amsterdam (CET)",
+  "Europe/Zurich": "Zurich (CET)",
+  "Europe/Stockholm": "Stockholm (CET)",
+  "Europe/Warsaw": "Warsaw (CET)",
+  "Europe/Kyiv": "Kyiv (EET)",
+  "Europe/Istanbul": "Istanbul (TRT)",
+  "Europe/Moscow": "Moscow (MSK)",
+  "America/New_York": "Eastern (ET)",
+  "America/Chicago": "Central (CT)",
+  "America/Denver": "Mountain (MT)",
+  "America/Phoenix": "Arizona (MST)",
+  "America/Los_Angeles": "Pacific (PT)",
+  "America/Anchorage": "Alaska (AKT)",
+  "Pacific/Honolulu": "Hawaii (HST)",
+  "America/Toronto": "Toronto (ET)",
+  "America/Vancouver": "Vancouver (PT)",
+  "America/Mexico_City": "Mexico City (CST)",
+  "America/Sao_Paulo": "São Paulo (BRT)",
+  "America/Argentina/Buenos_Aires": "Buenos Aires (ART)",
+  "America/Bogota": "Bogotá (COT)",
+  "America/Santiago": "Santiago (CLT)",
+  "Africa/Lagos": "Lagos (WAT)",
+  "Africa/Cairo": "Cairo (EET)",
+  "Africa/Nairobi": "Nairobi (EAT)",
+  "Africa/Johannesburg": "Johannesburg (SAST)",
+  "Australia/Sydney": "Sydney (AEST/AEDT)",
+  "Australia/Melbourne": "Melbourne (AEST/AEDT)",
+  "Australia/Perth": "Perth (AWST)",
+  "Pacific/Auckland": "New Zealand (NZST/NZDT)",
+};
+
+const derivedLabels = new Map<string, string>();
+
+function shortZoneName(timezone: string): string | null {
+  try {
+    const part = new Intl.DateTimeFormat("en-US", { timeZone: timezone, timeZoneName: "short" })
+      .formatToParts(new Date())
+      .find((entry) => entry.type === "timeZoneName")?.value;
+    // Intl falls back to "GMT+5:45" style names where no abbreviation exists.
+    return part && /^[A-Z]{2,5}$/.test(part) ? part : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A friendly name such as "India (IST)" or "Pacific (PT)" for an IANA timezone. */
+export function timezoneLabel(timezone: string): string {
+  const known = TIMEZONE_LABELS[timezone];
+  if (known) return known;
+
+  const cached = derivedLabels.get(timezone);
+  if (cached) return cached;
+
+  const city = (timezone.split("/").pop() ?? timezone).replace(/_/g, " ");
+  let label: string;
+  try {
+    label = `${city} (${shortZoneName(timezone) ?? formatUtcOffset(timezone)})`;
+  } catch {
+    label = timezone;
+  }
+  derivedLabels.set(timezone, label);
+  return label;
+}
+
 /** Timezones offered in the UI. Falls back to a curated list on older runtimes. */
 export function listSupportedTimezones(): string[] {
   const withSupported = Intl as typeof Intl & { supportedValuesOf?: (key: string) => string[] };

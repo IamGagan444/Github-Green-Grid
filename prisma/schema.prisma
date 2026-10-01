@@ -11,46 +11,62 @@ datasource db {
   provider = "postgresql"
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Identity
+// ─────────────────────────────────────────────────────────────────────────────
+
 model User {
-  id        String   @id @default(cuid())
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id            String     @id @default(cuid())
+  name          String?
+  // Nullable only for accounts created before Google sign-in existed. Every
+  // account created through Auth.js has a verified Google email.
+  email         String?    @unique
+  emailVerified DateTime?
+  image         String?
+  role          UserRole   @default(USER)
+  status        UserStatus @default(ACTIVE)
+  lastLoginAt   DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
 
-  // Automation defaults, applied when creating new schedules.
-  defaultTimezone     String @default("UTC")
-  defaultCommitMessage String @default("chore: update GreenGrid activity")
+  // Automation defaults, applied when creating new schedules and automations.
+  defaultTimezone      String      @default("UTC")
+  defaultCommitMessage String      @default("chore: update GreenGrid activity")
+  defaultScheduleTime  String      @default("17:00")
+  defaultDaysOfWeek    Weekday[]   @default([MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY])
+  defaultMessageStyle  MessageStyle @default(CONCISE)
 
-  githubAccount GitHubAccount?
-  sessions      Session[]
-  repositories  Repository[]
-  schedules     Schedule[]
+  accounts            Account[]
+  sessions            Session[]
+  githubIntegration   GitHubIntegration?
+  slackIntegrations   SlackIntegration[]
+  repositories        Repository[]
+  schedules           Schedule[]
+  automations         Automation[]
+  executions          Execution[]
+  auditLogs           AuditLog[]         @relation("AuditActor")
 
+  @@index([status])
+  @@index([role])
+  @@index([createdAt])
   @@map("users")
 }
 
-model GitHubAccount {
-  id     String @id @default(cuid())
-  userId String @unique
-
-  githubUserId String  @unique
-  username     String
-  displayName  String?
-  avatarUrl    String?
-  email        String?
-
-  // AES-256-GCM ciphertext. Never leaves the server.
-  accessTokenEncrypted  String
-  refreshTokenEncrypted String?
-  tokenExpiresAt        DateTime?
-  scopes                String[] @default([])
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+/// OAuth identities used to sign in (Google). Provider tokens are never stored:
+/// sign-in needs only the identity, so the adapter discards them.
+model Account {
+  id                String   @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  createdAt         DateTime @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@index([username])
-  @@map("github_accounts")
+  @@unique([provider, providerAccountId])
+  @@index([userId])
+  @@map("accounts")
 }
 
 model Session {
@@ -68,6 +84,81 @@ model Session {
   @@index([expiresAt])
   @@map("sessions")
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Integrations
+// ─────────────────────────────────────────────────────────────────────────────
+
+model GitHubIntegration {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  githubUserId String            @unique
+  username     String
+  displayName  String?
+  avatarUrl    String?
+  email        String?
+  status       IntegrationStatus @default(CONNECTED)
+
+  // AES-256-GCM ciphertext. Never leaves the server. Cleared on disconnect.
+  accessTokenEncrypted  String?
+  refreshTokenEncrypted String?
+  tokenExpiresAt        DateTime?
+  scopes                String[]  @default([])
+
+  connectedAt    DateTime  @default(now())
+  disconnectedAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([username])
+  @@index([status])
+  @@map("github_integrations")
+}
+
+model SlackIntegration {
+  id     String @id @default(cuid())
+  userId String
+
+  teamId     String
+  teamName   String
+  teamDomain String?
+  appId      String?
+  // Slack user who authorised the install.
+  authedUserId String
+  botUserId    String?
+  status       IntegrationStatus @default(CONNECTED)
+
+  // AES-256-GCM ciphertext. Never leaves the server. Cleared on disconnect.
+  botTokenEncrypted          String?
+  botRefreshTokenEncrypted   String?
+  botTokenExpiresAt          DateTime?
+  botScopes                  String[]  @default([])
+  // Present only when the user granted user scopes ("Post as me").
+  userTokenEncrypted         String?
+  userRefreshTokenEncrypted  String?
+  userTokenExpiresAt         DateTime?
+  userScopes                 String[]  @default([])
+
+  connectedAt    DateTime  @default(now())
+  disconnectedAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  automations Automation[]
+
+  @@unique([userId, teamId])
+  @@index([teamId])
+  @@index([status])
+  @@map("slack_integrations")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GreenGrid commit activity
+// ─────────────────────────────────────────────────────────────────────────────
 
 model Repository {
   id     String @id @default(cuid())
@@ -162,6 +253,265 @@ model ActivityExecution {
   @@index([repositoryId])
   @@index([status])
   @@map("activity_executions")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Standup automations
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Automation {
+  id     String           @id @default(cuid())
+  userId String
+  name   String
+  status AutomationStatus @default(ACTIVE)
+  // Set when an admin disables the automation; the owner cannot resume it.
+  disabledReason String?
+
+  // GitHub source. `githubSources` is a validated JSON array of
+  // { repositoryId, owner, name, fullName, branch | null } — see
+  // validators/automation.ts. `branch: null` means all branches.
+  githubSources Json
+  commitWindow  CommitWindow @default(SAME_DAY)
+
+  // Slack destination.
+  slackIntegrationId String?
+  slackChannelId     String
+  slackChannelName   String
+  postingMode        SlackPostingMode @default(BOT)
+
+  // AI.
+  messageStyle     MessageStyle @default(CONCISE)
+  quickNote        String?
+  includeFileStats Boolean      @default(false)
+
+  // Thread.
+  threadMode   ThreadMode @default(DATE_HEADER)
+  headerFormat String     @default("📅 {date}")
+
+  // Schedule. `scheduleTime` is "HH:MM" wall-clock time in `timezone`.
+  daysOfWeek   Weekday[]
+  scheduleTime String
+  timezone     String
+
+  lastExecutionAt DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user             User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  slackIntegration SlackIntegration? @relation(fields: [slackIntegrationId], references: [id], onDelete: SetNull)
+  executions       Execution[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([slackIntegrationId])
+  @@index([createdAt])
+  @@map("automations")
+}
+
+model Execution {
+  id           String  @id @default(cuid())
+  // Nullable so history survives automation deletion.
+  automationId String?
+  userId       String
+  // Snapshot so history remains readable after the automation is renamed or deleted.
+  automationName String
+
+  // Local calendar day in the automation timezone, "YYYY-MM-DD".
+  executionDate String
+  // "<automationId>:<executionDate>". Unique: one Slack update per automation per day.
+  idempotencyKey String          @unique
+  trigger        RunTrigger      @default(SCHEDULED)
+  status         RunStatus       @default(RUNNING)
+  attempt        Int             @default(1)
+  // Lease held by the worker processing this execution. A RUNNING row whose
+  // lease has expired is considered abandoned and may be resumed.
+  leaseExpiresAt DateTime?
+  nextRetryAt    DateTime?
+
+  // Phase results.
+  githubStatus StepStatus @default(PENDING)
+  aiStatus     StepStatus @default(PENDING)
+  slackStatus  StepStatus @default(PENDING)
+
+  repositories Json?
+  commitCount  Int?
+  // Validated AI output ({ summary: string[] }) — reused verbatim when resuming
+  // so a retry posts exactly the message that was generated.
+  aiOutput     Json?
+  aiModel      String?
+  messageText  String?
+
+  slackTeamId      String?
+  slackChannelId   String?
+  slackChannelName String?
+  slackParentTs    String?
+  slackReplyTs     String?
+  slackPermalink   String?
+
+  errorCode    String?
+  errorMessage String?
+
+  scheduledFor DateTime?
+  startedAt    DateTime  @default(now())
+  finishedAt   DateTime?
+  durationMs   Int?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  automation Automation? @relation(fields: [automationId], references: [id], onDelete: SetNull)
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([automationId])
+  @@index([status])
+  @@index([executionDate])
+  @@index([createdAt])
+  @@index([status, nextRetryAt])
+  @@map("executions")
+}
+
+/// One parent message per Slack channel per local day. The unique constraint
+/// stops two automations (or two workers) from creating duplicate date headers.
+model SlackThreadAnchor {
+  id         String    @id @default(cuid())
+  teamId     String
+  channelId  String
+  dateKey    String
+  // Distinguishes header styles so a date header and an AI parent never collide.
+  anchorKey  String
+  parentTs   String?
+  claimedAt  DateTime  @default(now())
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@unique([teamId, channelId, dateKey, anchorKey])
+  @@index([createdAt])
+  @@map("slack_thread_anchors")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Audit & operations
+// ─────────────────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id          String      @id @default(cuid())
+  actorUserId String?
+  action      AuditAction
+  targetType  String
+  targetId    String?
+  // Never contains tokens or secrets — sanitised by the audit service.
+  metadata    Json?
+  createdAt   DateTime    @default(now())
+
+  actor User? @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId])
+  @@index([action])
+  @@index([targetType, targetId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model CronRun {
+  id         String    @id @default(cuid())
+  job        String
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  processed  Int       @default(0)
+  succeeded  Int       @default(0)
+  failed     Int       @default(0)
+  skipped    Int       @default(0)
+  error      String?
+
+  @@index([job, startedAt])
+  @@map("cron_runs")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+enum IntegrationStatus {
+  CONNECTED
+  DISCONNECTED
+  REVOKED
+}
+
+enum AutomationStatus {
+  ACTIVE
+  PAUSED
+  DISABLED
+}
+
+enum CommitWindow {
+  SAME_DAY
+  PREVIOUS_DAY
+}
+
+enum SlackPostingMode {
+  BOT
+  USER
+}
+
+enum MessageStyle {
+  CONCISE
+  DETAILED
+  TECHNICAL
+  NON_TECHNICAL
+}
+
+enum ThreadMode {
+  DATE_HEADER
+  AI_PARENT
+  NO_THREAD
+}
+
+enum RunTrigger {
+  SCHEDULED
+  MANUAL
+}
+
+enum RunStatus {
+  RUNNING
+  SUCCESS
+  FAILED
+  SKIPPED
+}
+
+enum StepStatus {
+  PENDING
+  SUCCESS
+  FAILED
+  SKIPPED
+}
+
+enum AuditAction {
+  USER_LOGIN
+  USER_DISABLED
+  USER_ENABLED
+  GITHUB_CONNECTED
+  GITHUB_DISCONNECTED
+  SLACK_CONNECTED
+  SLACK_DISCONNECTED
+  AUTOMATION_CREATED
+  AUTOMATION_UPDATED
+  AUTOMATION_PAUSED
+  AUTOMATION_RESUMED
+  AUTOMATION_DELETED
+  AUTOMATION_TESTED
+  AUTOMATION_EXECUTED
+  AUTOMATION_FAILED
+  ADMIN_ACTION
 }
 
 enum Weekday {

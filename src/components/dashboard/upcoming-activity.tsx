@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { describeRelativeDay } from "@/lib/format";
+import { timezoneLabel } from "@/lib/schedule/timezone";
 import {
   describeFrequency,
   formatHour,
@@ -55,7 +56,7 @@ export function UpcomingActivity({ schedules }: { schedules: ScheduleWithReposit
                     {entry.schedule.repository.fullName}
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    {describeFrequency(entry.schedule.daysOfWeek)} · {entry.schedule.timezone}
+                    {describeFrequency(entry.schedule.daysOfWeek)} · {timezoneLabel(entry.schedule.timezone)}
                   </p>
                 </div>
                 <p className="shrink-0 text-right text-sm">
