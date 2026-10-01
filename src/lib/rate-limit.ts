@@ -1,12 +1,14 @@
 import "server-only";
 
+import { isRedisAvailable, redisPipeline } from "@/lib/cache/redis";
+
 /**
  * Provider-agnostic fixed-window rate limiter.
  *
- * Uses Upstash Redis over its REST API when UPSTASH_REDIS_REST_URL and
- * UPSTASH_REDIS_REST_TOKEN are set; otherwise falls back to an in-memory map.
- * The in-memory limiter is per-instance and is intended for local development
- * only — set the Upstash variables for multi-instance deployments.
+ * Uses Upstash Redis when UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN
+ * are set; otherwise (or while Redis is unreachable) an in-memory map. The
+ * in-memory limiter is per-instance — set the Upstash variables for
+ * multi-instance deployments.
  */
 
 export interface RateLimitResult {
@@ -30,6 +32,14 @@ export const RATE_LIMITS = {
   manualRun: { limit: 5, windowSeconds: 300 },
   cron: { limit: 60, windowSeconds: 60 },
   auth: { limit: 10, windowSeconds: 60 },
+  integrationConnect: { limit: 10, windowSeconds: 300 },
+  integrationRead: { limit: 60, windowSeconds: 60 },
+  automationWrite: { limit: 30, windowSeconds: 60 },
+  automationTest: { limit: 6, windowSeconds: 300 },
+  automationRun: { limit: 5, windowSeconds: 300 },
+  adminWrite: { limit: 30, windowSeconds: 60 },
+  webhook: { limit: 120, windowSeconds: 60 },
+  settingsWrite: { limit: 20, windowSeconds: 60 },
 } as const satisfies Record<string, RateLimitOptions>;
 
 const memoryStore = new Map<string, { count: number; reset: number }>();
@@ -55,36 +65,17 @@ function memoryLimit(key: string, options: RateLimitOptions): RateLimitResult {
   };
 }
 
-async function redisLimit(
-  key: string,
-  options: RateLimitOptions,
-  url: string,
-  token: string,
-): Promise<RateLimitResult> {
+async function redisLimit(key: string, options: RateLimitOptions): Promise<RateLimitResult> {
   const windowMs = options.windowSeconds * 1000;
   const bucket = Math.floor(Date.now() / windowMs);
   const redisKey = `greengrid:rl:${key}:${bucket}`;
   const reset = (bucket + 1) * windowMs;
 
-  const response = await fetch(`${url.replace(/\/$/, "")}/pipeline`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify([
-      ["INCR", redisKey],
-      ["EXPIRE", redisKey, String(options.windowSeconds + 1)],
-    ]),
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    throw new Error(`Upstash responded with ${response.status}`);
-  }
-
-  const payload = (await response.json()) as Array<{ result?: number | string }>;
-  const count = Number(payload[0]?.result ?? 0);
+  const [result] = await redisPipeline([
+    ["INCR", redisKey],
+    ["EXPIRE", redisKey, options.windowSeconds + 1],
+  ]);
+  const count = Number(result ?? 0);
 
   return {
     success: count <= options.limit,
@@ -95,22 +86,19 @@ async function redisLimit(
 }
 
 /**
- * Consumes one token for `key`. Never throws — a failing Redis backend
- * degrades to allowing the request rather than locking users out.
+ * Consumes one token for `key`. Never throws: when Redis is unreachable the
+ * per-instance memory limiter still applies, rather than locking users out or
+ * dropping protection entirely.
  */
 export async function rateLimit(
   key: string,
   options: RateLimitOptions,
 ): Promise<RateLimitResult> {
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-
-  if (url && token) {
+  if (isRedisAvailable()) {
     try {
-      return await redisLimit(key, options, url, token);
-    } catch (error) {
-      console.error("[rate-limit] Redis backend unavailable, allowing request", error);
-      return { success: true, limit: options.limit, remaining: options.limit, reset: Date.now() };
+      return await redisLimit(key, options);
+    } catch {
+      // Logged by the Redis client; fall through to the local limiter.
     }
   }
 

@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { ApiError, handleApiError, readJson, requireApiUser } from "@/lib/api";
+import { assertSameOrigin, ApiError, handleApiError, readJson, requireApiUser } from "@/lib/api";
 import { runScheduledActivity } from "@/lib/activity/run-activity";
 import { rateLimit, rateLimitHeaders, RATE_LIMITS } from "@/lib/rate-limit";
 import { getOwnedSchedule } from "@/lib/services/schedules";
@@ -16,6 +16,7 @@ export const maxDuration = 60;
  */
 export async function POST(request: NextRequest) {
   try {
+    assertSameOrigin(request);
     const user = await requireApiUser();
 
     const limit = await rateLimit(`manual-run:${user.userId}`, RATE_LIMITS.manualRun);

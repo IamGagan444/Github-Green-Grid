@@ -2,7 +2,19 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import "server-only";
 
-import { getSessionUser, type SessionUser } from "@/lib/session";
+import { getCurrentUser, type SessionUser } from "@/lib/auth/session";
+import { getAppUrl } from "@/lib/env";
+import { AppError } from "@/lib/errors";
+import { GitHubApiError } from "@/lib/github/errors";
+import { createLogger } from "@/lib/logging/logger";
+import { rateLimit, type RateLimitOptions } from "@/lib/rate-limit";
+import {
+  assertPermission,
+  AuthorizationError,
+  type Permission,
+} from "@/lib/rbac";
+
+const log = createLogger("api");
 
 export type ApiErrorCode =
   | "UNAUTHORIZED"
@@ -12,6 +24,8 @@ export type ApiErrorCode =
   | "RATE_LIMITED"
   | "CONFLICT"
   | "GITHUB_ERROR"
+  | "PROVIDER_ERROR"
+  | "SERVICE_UNAVAILABLE"
   | "INTERNAL_ERROR";
 
 const STATUS_BY_CODE: Record<ApiErrorCode, number> = {
@@ -22,11 +36,13 @@ const STATUS_BY_CODE: Record<ApiErrorCode, number> = {
   RATE_LIMITED: 429,
   CONFLICT: 409,
   GITHUB_ERROR: 502,
+  PROVIDER_ERROR: 502,
+  SERVICE_UNAVAILABLE: 503,
   INTERNAL_ERROR: 500,
 };
 
 export interface ApiErrorBody {
-  error: { code: ApiErrorCode; message: string; details?: unknown };
+  error: { code: ApiErrorCode | string; message: string; details?: unknown };
 }
 
 /** Thrown by route handlers; converted to a safe JSON body by `handleApiError`. */
@@ -43,30 +59,44 @@ export class ApiError extends Error {
 }
 
 export function jsonError(
-  code: ApiErrorCode,
+  code: ApiErrorCode | string,
   message: string,
+  status: number,
   details?: unknown,
 ): NextResponse<ApiErrorBody> {
   return NextResponse.json(
     { error: { code, message, ...(details === undefined ? {} : { details }) } },
-    { status: STATUS_BY_CODE[code] },
+    { status },
   );
 }
 
 /**
  * Converts any thrown value into a user-safe response.
- * Stack traces and unexpected messages stay server-side.
+ * Stack traces, provider payloads and unexpected messages stay server-side.
  */
 export function handleApiError(error: unknown, context: string): NextResponse<ApiErrorBody> {
   if (error instanceof ApiError) {
-    if (error.code === "INTERNAL_ERROR") {
-      console.error(`[${context}]`, error.message);
-    }
-    return jsonError(error.code, error.message, error.details);
+    if (error.code === "INTERNAL_ERROR") log.error(context, { message: error.message });
+    return jsonError(error.code, error.message, STATUS_BY_CODE[error.code], error.details);
+  }
+
+  if (error instanceof AuthorizationError) {
+    const status = error.code === "UNAUTHORIZED" ? 401 : error.code === "NOT_FOUND" ? 404 : 403;
+    return jsonError(error.code, error.message, status);
+  }
+
+  if (error instanceof AppError) {
+    log.warn(context, { code: error.code, detail: error.message });
+    return jsonError(error.code, error.userMessage, error.httpStatus);
+  }
+
+  if (error instanceof GitHubApiError) {
+    log.warn(context, { code: error.code, status: error.status, detail: error.message });
+    return jsonError("GITHUB_ERROR", error.userMessage, STATUS_BY_CODE.GITHUB_ERROR);
   }
 
   if (error instanceof ZodError) {
-    return jsonError("VALIDATION_ERROR", "The submitted data is invalid.", {
+    return jsonError("VALIDATION_ERROR", "The submitted data is invalid.", 422, {
       issues: error.issues.map((issue) => ({
         path: issue.path.join("."),
         message: issue.message,
@@ -74,17 +104,52 @@ export function handleApiError(error: unknown, context: string): NextResponse<Ap
     });
   }
 
-  console.error(`[${context}]`, error);
-  return jsonError("INTERNAL_ERROR", "Something went wrong. Please try again.");
+  log.error(context, { error: error instanceof Error ? error : String(error) });
+  return jsonError("INTERNAL_ERROR", "Something went wrong. Please try again.", 500);
 }
 
-/** Route-handler guard. Throws `ApiError("UNAUTHORIZED")` for anonymous callers. */
+/** Route-handler guard. Throws for anonymous or disabled callers. */
 export async function requireApiUser(): Promise<SessionUser> {
-  const user = await getSessionUser();
-  if (!user) {
-    throw new ApiError("UNAUTHORIZED", "You need to sign in to continue.");
-  }
+  const user = await getCurrentUser();
+  if (!user) throw new AuthorizationError("UNAUTHORIZED");
   return user;
+}
+
+/** Authentication + status + role permission in one call. */
+export async function authorize(permission: Permission): Promise<SessionUser> {
+  const user = await getCurrentUser();
+  assertPermission(user, permission);
+  return user as SessionUser;
+}
+
+/**
+ * CSRF defence for cookie-authenticated mutations. Session cookies are
+ * SameSite=Lax (so cross-site POSTs carry no cookie), and additionally every
+ * mutating request must come from our own origin.
+ */
+export function assertSameOrigin(request: Request): void {
+  const method = request.method.toUpperCase();
+  if (method === "GET" || method === "HEAD" || method === "OPTIONS") return;
+
+  const expected = new URL(getAppUrl()).origin;
+  const origin = request.headers.get("origin");
+  if (origin) {
+    if (origin !== expected) throw new ApiError("FORBIDDEN", "Cross-origin request rejected.");
+    return;
+  }
+
+  // Some clients omit Origin on same-origin requests; fall back to Referer.
+  const referer = request.headers.get("referer");
+  if (!referer || new URL(referer).origin !== expected) {
+    throw new ApiError("FORBIDDEN", "Cross-origin request rejected.");
+  }
+}
+
+export async function enforceRateLimit(key: string, options: RateLimitOptions): Promise<void> {
+  const result = await rateLimit(key, options);
+  if (!result.success) {
+    throw new ApiError("RATE_LIMITED", "Too many requests. Please wait a moment and try again.");
+  }
 }
 
 export async function readJson<T>(
@@ -98,4 +163,8 @@ export async function readJson<T>(
     throw new ApiError("VALIDATION_ERROR", "Request body must be valid JSON.");
   }
   return schema.parse(body);
+}
+
+export function clientIp(request: Request): string {
+  return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
 }

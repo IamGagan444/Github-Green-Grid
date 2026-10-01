@@ -1,27 +1,15 @@
 "use client";
 
-import * as React from "react";
-import { useRouter } from "next/navigation";
 import { Pause, Pencil, Play, Trash2 } from "lucide-react";
-import { toast } from "sonner";
 
+import { deleteScheduleAction, setScheduleEnabledAction } from "@/app/actions/schedules";
 import { RunNowButton } from "@/components/dashboard/run-now-button";
+import { ActionButton, ConfirmAction } from "@/components/settings/confirm-action";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import { apiFetch, messageFor } from "@/lib/client/api-client";
 import { describeRelativeDay, formatDateTime } from "@/lib/format";
+import { timezoneLabel } from "@/lib/schedule/timezone";
 import {
   describeCommitWindow,
   describeFrequency,
@@ -29,44 +17,11 @@ import {
   getSlotHours,
 } from "@/lib/schedule/next-run";
 import type { ScheduleWithRepository } from "@/lib/services/schedules";
+import { useAppDispatch } from "@/store/hooks";
+import { editSchedule } from "@/store/slices/schedule-editor-slice";
 
-interface ScheduleCardProps {
-  schedule: ScheduleWithRepository;
-  onEdit: (schedule: ScheduleWithRepository) => void;
-}
-
-export function ScheduleCard({ schedule, onEdit }: ScheduleCardProps) {
-  const router = useRouter();
-  const [isPending, setIsPending] = React.useState(false);
-
-  async function toggleEnabled() {
-    setIsPending(true);
-    try {
-      await apiFetch("/api/schedules/" + schedule.id, {
-        method: "PATCH",
-        body: JSON.stringify({ enabled: !schedule.enabled }),
-      });
-      toast.success(schedule.enabled ? "Automation paused." : "Automation resumed.");
-      router.refresh();
-    } catch (error) {
-      toast.error(messageFor(error));
-    } finally {
-      setIsPending(false);
-    }
-  }
-
-  async function remove() {
-    setIsPending(true);
-    try {
-      await apiFetch("/api/schedules/" + schedule.id, { method: "DELETE" });
-      toast.success("Schedule deleted.");
-      router.refresh();
-    } catch (error) {
-      toast.error(messageFor(error));
-    } finally {
-      setIsPending(false);
-    }
-  }
+export function ScheduleCard({ schedule }: { schedule: ScheduleWithRepository }) {
+  const dispatch = useAppDispatch();
 
   const slotHours = getSlotHours(schedule.commitsPerDay);
   const nextRunLabel =
@@ -94,7 +49,7 @@ export function ScheduleCard({ schedule, onEdit }: ScheduleCardProps) {
         <dl className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <Detail label="Frequency" value={describeFrequency(schedule.daysOfWeek)} />
           <Detail label="Commits per day" value={String(schedule.commitsPerDay)} />
-          <Detail label="Timezone" value={schedule.timezone} />
+          <Detail label="Timezone" value={timezoneLabel(schedule.timezone)} />
           <Detail label="Next run" value={nextRunLabel} />
         </dl>
 
@@ -110,14 +65,18 @@ export function ScheduleCard({ schedule, onEdit }: ScheduleCardProps) {
 
       <CardFooter className="flex-wrap justify-between">
         <div className="flex flex-wrap gap-2">
-          <Button variant="outline" size="sm" onClick={() => onEdit(schedule)}>
+          <Button variant="outline" size="sm" onClick={() => dispatch(editSchedule(schedule.id))}>
             <Pencil aria-hidden="true" />
             Edit
           </Button>
-          <Button variant="outline" size="sm" onClick={toggleEnabled} disabled={isPending}>
+          <ActionButton
+            action={setScheduleEnabledAction}
+            fields={{ id: schedule.id, enabled: String(!schedule.enabled) }}
+            pendingLabel="Saving…"
+          >
             {schedule.enabled ? <Pause aria-hidden="true" /> : <Play aria-hidden="true" />}
             {schedule.enabled ? "Pause" : "Resume"}
-          </Button>
+          </ActionButton>
           <RunNowButton
             scheduleId={schedule.id}
             repositoryFullName={schedule.repository.fullName}
@@ -126,29 +85,17 @@ export function ScheduleCard({ schedule, onEdit }: ScheduleCardProps) {
           />
         </div>
 
-        <AlertDialog>
-          <AlertDialogTrigger asChild>
-            <Button variant="ghost" size="sm" className="text-destructive hover:bg-destructive/10">
-              <Trash2 aria-hidden="true" />
-              Delete
-            </Button>
-          </AlertDialogTrigger>
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Delete this schedule?</AlertDialogTitle>
-              <AlertDialogDescription>
-                GreenGrid will stop performing maintenance on {schedule.repository.fullName}.
-                Past activity history is kept.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction onClick={remove} disabled={isPending}>
-                Delete schedule
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
+        <ConfirmAction
+          action={deleteScheduleAction}
+          fields={{ id: schedule.id }}
+          triggerLabel="Delete"
+          triggerIcon={<Trash2 aria-hidden="true" />}
+          variant="ghost"
+          title="Delete this schedule?"
+          description={`GreenGrid will stop performing maintenance on ${schedule.repository.fullName}. Past activity history is kept.`}
+          confirmLabel="Delete schedule"
+          pendingLabel="Deleting…"
+        />
       </CardFooter>
     </Card>
   );

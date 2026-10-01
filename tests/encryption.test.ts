@@ -4,7 +4,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 const TEST_KEY = crypto.randomBytes(32).toString("base64");
 
 beforeAll(() => {
-  process.env.GITHUB_TOKEN_ENCRYPTION_KEY = TEST_KEY;
+  process.env.ENCRYPTION_KEY = TEST_KEY;
 });
 
 const { encryptSecret, decryptSecret, safeCompare, hashToken, randomToken } = await import(

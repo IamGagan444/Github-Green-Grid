@@ -21,7 +21,7 @@ vi.mock("@/lib/activity/run-activity", () => ({
   runScheduledActivity: (...args: unknown[]) => runScheduledActivity(...args),
 }));
 
-vi.mock("@/lib/session", () => ({
+vi.mock("@/lib/auth/maintenance", () => ({
   pruneExpiredSessions: async () => 0,
 }));
 

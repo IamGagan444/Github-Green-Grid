@@ -4,7 +4,7 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 const TEST_KEY = crypto.randomBytes(32).toString("base64");
 
 beforeAll(() => {
-  process.env.GITHUB_TOKEN_ENCRYPTION_KEY = TEST_KEY;
+  process.env.ENCRYPTION_KEY = TEST_KEY;
 });
 
 const accountFindUnique = vi.fn();
@@ -12,8 +12,12 @@ const accountUpdate = vi.fn();
 
 vi.mock("@/lib/db", () => ({
   prisma: {
-    gitHubAccount: {
-      findUnique: (...args: unknown[]) => accountFindUnique(...args),
+    gitHubIntegration: {
+      // Rows in these tests describe connected integrations.
+      findUnique: async (...args: unknown[]) => {
+        const row = await accountFindUnique(...args);
+        return row ? { status: "CONNECTED", ...row } : row;
+      },
       update: (...args: unknown[]) => accountUpdate(...args),
     },
   },

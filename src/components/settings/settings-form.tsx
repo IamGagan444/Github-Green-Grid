@@ -1,17 +1,21 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { Controller, useForm } from "react-hook-form";
+import * as React from "react";
+import { Controller, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { toast } from "sonner";
 import type { z } from "zod";
 
+import { saveSettingsAction } from "@/app/actions/account";
+import { MESSAGE_STYLE_OPTIONS } from "@/components/automations/options";
+import { DaySelector } from "@/components/schedule/day-selector";
 import { TimezoneSelector } from "@/components/schedule/timezone-selector";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { apiFetch, messageFor } from "@/lib/client/api-client";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { IDLE_ACTION_STATE } from "@/lib/actions/action-state";
+import { useActionToast } from "@/lib/client/use-action-toast";
 import { settingsSchema } from "@/lib/validation/schemas";
 
 type FormValues = z.infer<typeof settingsSchema>;
@@ -19,85 +23,122 @@ type FormValues = z.infer<typeof settingsSchema>;
 interface SettingsFormProps {
   defaultValues: FormValues;
   timezones: string[];
-  selectedRepository: string | null;
 }
 
-export function SettingsForm({
-  defaultValues,
-  timezones,
-  selectedRepository,
-}: SettingsFormProps) {
-  const router = useRouter();
+function FieldError({ message }: { message?: string }) {
+  return message ? (
+    <p role="alert" className="text-xs text-destructive">
+      {message}
+    </p>
+  ) : null;
+}
+
+export function SettingsForm({ defaultValues, timezones }: SettingsFormProps) {
   const form = useForm<FormValues>({
     resolver: zodResolver(settingsSchema),
     defaultValues,
   });
+  const errors = form.formState.errors;
+  const values = useWatch({ control: form.control });
 
-  async function onSubmit(values: FormValues) {
-    try {
-      await apiFetch("/api/settings", { method: "PATCH", body: JSON.stringify(values) });
-      toast.success("Automation defaults saved.");
-      router.refresh();
-    } catch (error) {
-      toast.error(messageFor(error));
-    }
+  const formRef = React.useRef<HTMLFormElement>(null);
+  const [state, formAction, pending] = React.useActionState(saveSettingsAction, IDLE_ACTION_STATE);
+  useActionToast(state);
+
+  // After hydration, validate on the client first; before hydration the native
+  // form posts straight to the Server Action, which validates on its own.
+  function onSubmit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void form.handleSubmit(() => {
+      if (!formRef.current) return;
+      const data = new FormData(formRef.current);
+      React.startTransition(() => formAction(data));
+    })(event);
   }
 
   return (
-    <form onSubmit={form.handleSubmit(onSubmit)} noValidate>
-      <Card>
+    <form ref={formRef} action={formAction} onSubmit={onSubmit} noValidate>
+      {/* Values of the custom (non-native) controls, so the form posts them. */}
+      <input type="hidden" name="defaultTimezone" value={values.defaultTimezone ?? ""} />
+      <input type="hidden" name="defaultMessageStyle" value={values.defaultMessageStyle ?? ""} />
+      {(values.defaultDaysOfWeek ?? []).map((day) => (
+        <input key={day} type="hidden" name="defaultDaysOfWeek" value={day} />
+      ))}
+      <Card id="defaults">
         <CardHeader>
           <CardTitle>Automation defaults</CardTitle>
+          <CardDescription>Pre-filled when you create a new standup automation or commit schedule.</CardDescription>
         </CardHeader>
 
         <CardContent className="flex flex-col gap-5 pt-0">
           <div className="flex flex-col gap-2">
-            <Label>Default repository</Label>
-            <Input value={selectedRepository ?? "No repository selected"} readOnly disabled />
-            <p className="text-xs text-muted-foreground">
-              Change this on the Repositories page.
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="defaultTimezone">Default timezone</Label>
+            <Label htmlFor="defaultTimezone">Timezone</Label>
             <Controller
               control={form.control}
               name="defaultTimezone"
               render={({ field }) => (
-                <TimezoneSelector
-                  id="defaultTimezone"
-                  value={field.value}
-                  timezones={timezones}
-                  onChange={field.onChange}
-                />
+                <TimezoneSelector id="defaultTimezone" value={field.value} timezones={timezones} onChange={field.onChange} />
               )}
             />
-            {form.formState.errors.defaultTimezone ? (
-              <p role="alert" className="text-xs text-destructive">
-                {form.formState.errors.defaultTimezone.message}
-              </p>
-            ) : null}
+            <FieldError message={errors.defaultTimezone?.message} />
+          </div>
+
+          <div className="grid gap-5 sm:grid-cols-2">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="defaultScheduleTime">Standup time</Label>
+              <Input id="defaultScheduleTime" type="time" step={60} {...form.register("defaultScheduleTime")} />
+              <FieldError message={errors.defaultScheduleTime?.message} />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="defaultMessageStyle">Message style</Label>
+              <Controller
+                control={form.control}
+                name="defaultMessageStyle"
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger id="defaultMessageStyle">
+                      <SelectValue placeholder="Choose a style" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MESSAGE_STYLE_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            </div>
           </div>
 
           <div className="flex flex-col gap-2">
-            <Label htmlFor="defaultCommitMessage">Default commit message</Label>
+            <Label>Standup days</Label>
+            <Controller
+              control={form.control}
+              name="defaultDaysOfWeek"
+              render={({ field }) => <DaySelector value={field.value ?? []} onChange={field.onChange} />}
+            />
+            <FieldError message={errors.defaultDaysOfWeek?.message} />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label htmlFor="defaultCommitMessage">Commit-activity message</Label>
             <Input id="defaultCommitMessage" {...form.register("defaultCommitMessage")} />
-            {form.formState.errors.defaultCommitMessage ? (
-              <p role="alert" className="text-xs text-destructive">
-                {form.formState.errors.defaultCommitMessage.message}
-              </p>
+            {errors.defaultCommitMessage ? (
+              <FieldError message={errors.defaultCommitMessage.message} />
             ) : (
               <p className="text-xs text-muted-foreground">
-                Used when a new schedule is created. Existing schedules keep their own message.
+                Used when a new commit schedule is created. Existing schedules keep their own message.
               </p>
             )}
           </div>
         </CardContent>
 
         <CardFooter className="justify-end">
-          <Button type="submit" disabled={form.formState.isSubmitting}>
-            {form.formState.isSubmitting ? "Saving…" : "Save defaults"}
+          <Button type="submit" disabled={pending}>
+            {pending ? "Saving…" : "Save defaults"}
           </Button>
         </CardFooter>
       </Card>

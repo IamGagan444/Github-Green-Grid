@@ -2,37 +2,42 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { GithubIcon } from "@/components/icons/github-icon";
+import { signInWithGoogle } from "@/app/actions/auth";
+import { GoogleIcon } from "@/components/icons/google-icon";
 import { Logo } from "@/components/layout/logo";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { getSessionUser } from "@/lib/session";
+import { getCurrentUser } from "@/lib/auth/session";
 
 export const metadata: Metadata = { title: "Sign in" };
 export const dynamic = "force-dynamic";
 
+/** Keys are our own rejection reasons plus Auth.js error codes. */
 const ERROR_MESSAGES: Record<string, string> = {
-  access_denied: "You cancelled the GitHub authorisation. Nothing was changed.",
-  invalid_request: "That sign-in link was incomplete. Please try again.",
-  invalid_state: "The sign-in request expired or could not be verified. Please try again.",
-  connection_failed: "GreenGrid could not reach GitHub. Please try again in a moment.",
-  rate_limited: "Too many sign-in attempts. Please wait a minute and try again.",
+  account_disabled: "Your account has been disabled. Contact an administrator if you think this is a mistake.",
+  email_unverified: "Your Google account email must be verified to sign in.",
+  provider_not_allowed: "Only Google sign-in is supported.",
+  AccessDenied: "Access was denied. Your account may be disabled.",
+  OAuthSignin: "Could not start Google sign-in. Please try again.",
+  OAuthCallback: "Google sign-in could not be completed. Please try again.",
+  OAuthCallbackError: "Google sign-in could not be completed. Please try again.",
+  OAuthAccountNotLinked: "This email is already linked to another sign-in method.",
+  Configuration: "Sign-in is temporarily unavailable. Please try again later.",
+  Verification: "The sign-in link is no longer valid.",
+  Default: "Something went wrong while signing in. Please try again.",
 };
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ error?: string; returnTo?: string }>;
+  searchParams: Promise<{ error?: string; returnTo?: string; callbackUrl?: string }>;
 }) {
-  const user = await getSessionUser();
+  const user = await getCurrentUser();
   if (user) redirect("/dashboard");
 
   const params = await searchParams;
-  const error = params.error ? ERROR_MESSAGES[params.error] : undefined;
-  const returnTo = params.returnTo;
-
-  const authorizeHref =
-    "/api/auth/github" + (returnTo ? "?returnTo=" + encodeURIComponent(returnTo) : "");
+  const error = params.error ? (ERROR_MESSAGES[params.error] ?? ERROR_MESSAGES.Default) : undefined;
+  const returnTo = params.returnTo ?? "/dashboard";
 
   return (
     <main id="main" className="flex min-h-dvh flex-col items-center justify-center px-4 py-12">
@@ -48,8 +53,8 @@ export default async function LoginPage({
           <div>
             <h1 className="text-lg font-semibold tracking-tight">Sign in to GreenGrid</h1>
             <p className="mt-1.5 text-sm text-muted-foreground">
-              GreenGrid uses GitHub OAuth. Your access token is stored encrypted on the server and
-              is never sent to the browser.
+              Sign in with Google, then connect GitHub and Slack from Settings. Integration
+              credentials are encrypted on the server and never sent to your browser.
             </p>
           </div>
 
@@ -62,13 +67,13 @@ export default async function LoginPage({
             </p>
           ) : null}
 
-          <Button asChild size="lg" className="w-full">
-            {/* A plain link: the route handler mints the CSRF state cookie. */}
-            <a href={authorizeHref}>
-              <GithubIcon className="size-4" />
-              Continue with GitHub
-            </a>
-          </Button>
+          <form action={signInWithGoogle}>
+            <input type="hidden" name="returnTo" value={returnTo} />
+            <Button type="submit" size="lg" variant="outline" className="w-full">
+              <GoogleIcon className="size-4" />
+              Continue with Google
+            </Button>
+          </form>
 
           <p className="text-xs text-muted-foreground">
             By continuing you agree to the{" "}
@@ -83,11 +88,6 @@ export default async function LoginPage({
           </p>
         </CardContent>
       </Card>
-
-      <p className="mt-6 max-w-sm text-center text-xs text-muted-foreground">
-        GreenGrid creates real commits through GitHub&apos;s API. GitHub independently decides
-        which commits appear on your contribution graph.
-      </p>
     </main>
   );
 }

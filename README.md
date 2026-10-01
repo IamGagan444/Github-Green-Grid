@@ -1,10 +1,22 @@
 # GreenGrid
 
-GreenGrid is a GitHub activity automation dashboard. You connect your GitHub
-account, pick a repository you own or have write access to, configure a
-schedule, and GreenGrid performs a small, real repository maintenance update on
-the days you chose — creating one commit per run through GitHub's official REST
-API, attributed to your own GitHub account.
+GreenGrid is a multi-user SaaS that automates two things around your GitHub
+work:
+
+1. **Daily standup automations (GitHub → Slack).** Each automation reads the
+   commits *you* authored today in the repositories and branches you choose,
+   has NVIDIA Nemotron (`nvidia/nemotron-3-super-120b-a12b`) turn them into
+   concise standup bullets, and posts them to a Slack channel — as a reply under
+   one shared daily date-header thread — on your schedule, in your timezone.
+   Every run is idempotent: one update per automation per day, never duplicated.
+2. **Commit activity schedules.** Pick a repository you can write to, configure
+   a schedule, and GreenGrid performs a small, real repository maintenance
+   update on the days you chose — one commit per run through GitHub's official
+   REST API, attributed to your own GitHub account.
+
+You sign in with Google; GitHub and Slack are integrations you connect from
+Settings. Administrators get a separate panel for users, automations,
+executions, integrations, audit logs and system health.
 
 **GreenGrid does not control GitHub's contribution graph.** It creates real
 commits; GitHub independently decides which commits appear on your profile,
@@ -26,9 +38,15 @@ What GreenGrid explicitly does **not** do:
 
 - [Tech stack](#tech-stack)
 - [Architecture](#architecture)
+- [Standup automations](#standup-automations)
+- [Roles and access control](#roles-and-access-control)
 - [Local development](#local-development)
+- [Google sign-in setup](#google-sign-in-setup)
 - [GitHub OAuth setup](#github-oauth-setup)
 - [Required GitHub permissions](#required-github-permissions)
+- [Slack app setup](#slack-app-setup)
+- [NVIDIA API setup](#nvidia-api-setup)
+- [Upgrading an existing GreenGrid deployment](#upgrading-an-existing-greengrid-deployment)
 - [Database setup](#database-setup)
 - [Environment variables](#environment-variables)
 - [Prisma migrations](#prisma-migrations)
@@ -51,64 +69,60 @@ What GreenGrid explicitly does **not** do:
 | Forms      | React Hook Form + Zod                                        |
 | Database   | PostgreSQL via Prisma 7 (`@prisma/adapter-pg` driver adapter)|
 | GitHub API | Octokit (`octokit`), official REST API only                  |
-| Auth       | Custom GitHub OAuth flow with server-side, DB-backed sessions|
-| Scheduling | External cron hitting a `CRON_SECRET`-protected endpoint      |
-| Tests      | Vitest (GitHub and database access fully mocked)             |
+| Slack API  | Slack Web API over `fetch` (OAuth v2, bot + optional user tokens) |
+| AI         | NVIDIA Nemotron via the OpenAI-compatible NVIDIA API, Zod-validated output |
+| Auth       | Auth.js v5 (Google), database sessions with hashed tokens    |
+| Scheduling | External cron hitting `CRON_SECRET`-protected endpoints      |
+| Tests      | Vitest (GitHub, Slack, AI and database access fully mocked)  |
 
 ## Architecture
 
 ```
 src/
   app/
-    page.tsx                     Landing page
-    login/                       Sign-in
-    privacy/  terms/             Legal pages
-    dashboard/
-      page.tsx                   Overview: stats + contribution calendar
-      activity/                  Execution history with filters + pagination
-      schedule/                  Schedule builder
-      repositories/              Repository selection
-      settings/                  Account, defaults, danger zone
+    page.tsx  login/  privacy/  terms/     Public pages
+    actions/auth.ts                        Sign-in / sign-out server actions
+    (app)/                                 Authenticated shell (server-side guard)
+      dashboard/                           Overview + commit-activity pages
+      automations/  [id]/  [id]/edit/  new/  8-step automation wizard
+      executions/   [id]/                  Execution history + detail
+      settings/                            Profile, integrations, defaults, security, account
+      admin/                               Users, automations, executions,
+                                           integrations, audit logs, system
     api/
-      auth/github/               OAuth start + callback
-      auth/logout | session
-      github/user | repositories | activity
-      schedules/ | schedules/[id]
-      activity/run               Manual "Run activity now"
-      cron/activity              Scheduler entry point
-      settings                   Defaults + disconnect
-
-  components/
-    layout/     sidebar, mobile-nav, header, user-menu
-    dashboard/  contribution-calendar, calendar-panel, stats-card,
-                upcoming-activity, run-now-button, contribution-disclaimer
-    repositories/  repository-card, repository-selector
-    schedule/      schedule-form, schedule-card, schedule-manager,
-                   day-selector, timezone-selector
-    activity/      activity-table, activity-status, activity-filters
-    ui/            Radix-based primitives, skeletons, empty states
+      auth/[...nextauth]                   Auth.js (Google)
+      auth/github/callback                 GitHub integration callback
+      integrations/github/…  slack/…       Connect, disconnect, repos, branches, channels
+      automations/…  executions/…          CRUD, pause/resume, test (dry run), run now
+      admin/…                              Enable/disable users and automations
+      cron/standups  cron/activity         Scheduler entry points
+      webhooks/slack/events                Signed Slack events (uninstall/revoke)
 
   lib/
-    env.ts            Zod-validated server environment contract
-    db.ts             Prisma client (pg driver adapter, dev singleton)
-    encryption.ts     AES-256-GCM for tokens, constant-time compare, hashing
-    session.ts        Opaque DB-backed sessions + OAuth state cookies
-    auth.ts           Server-component auth guard
-    api.ts            ApiError, safe error responses, route guards
-    rate-limit.ts     Provider-agnostic limiter (Upstash REST or in-memory)
-    format.ts         Presentation helpers shared by server and client
-    validation/       Zod schemas — the single source of input truth
-    schedule/         timezone.ts, timezone-search.ts, next-run.ts
-                      (pure, fully unit-tested)
-    github/           github-client, -user, -repositories, -content,
-                      -commits, oauth, errors, types
-    activity/         run-activity.ts, calendar.ts, types.ts
-    services/         repositories, schedules, activity-history
+    auth/        Auth.js config, hashed-session adapter, sign-in policy, guards
+    rbac/        Permissions, assertPermission, assertResourceAccess (IDOR)
+    github/      Octokit client (token refresh), repos, branches, commit fetch + filter
+    slack/       Web API client, OAuth v2, message building, thread detection, signatures
+    ai/          Nemotron client, prompt, Zod output schema
+    automation/  Pure schedule math, execution engine (ports), takeover rules
+    scheduler/   Due selection, time-budgeted runner, cron auth
+    logging/     Structured JSON logger with secret redaction
+    errors.ts    Typed AppError codes with user-safe messages and retry class
+    retry.ts     Exponential backoff with jitter + Retry-After
+    encryption.ts  AES-256-GCM, HMAC, constant-time compare
+    oauth-state.ts Single-use, user-bound OAuth state cookies
+  services/      github-, slack-, ai-, automation-, execution-, audit-, admin-,
+                 dashboard-service — the only layer routes and pages call
+  validators/    Zod schemas for automations and queries
+  types/         Auth.js module augmentation
 ```
 
-**Layering rule:** UI components never call GitHub. Routes and server components
-call `lib/services/*` or `lib/activity/*`, which call `lib/github/*`, which is
-the only place Octokit is constructed.
+**Layering rule:** UI components never call GitHub, Slack or NVIDIA. Pages and
+route handlers call `services/*`; services call the provider modules in
+`lib/github`, `lib/slack` and `lib/ai`, which are the only places those APIs are
+contacted. The execution engine (`lib/automation/engine.ts`) depends only on
+ports (interfaces), so its duplicate-protection guarantees are tested against
+in-memory fakes.
 
 ### Request flow for a scheduled run
 
@@ -173,6 +187,92 @@ Higher counts are visibly automated. GitHub's Acceptable Use Policies still
 apply, and a large number of bot commits per day to a single file is the kind of
 activity that draws attention — 1-3 reads as ordinary maintenance.
 
+## Standup automations
+
+An automation holds a GitHub source (1–5 repositories, each one branch or all
+branches, same-day or previous-day commits), an AI style and optional quick
+note, a Slack destination (workspace, channel, bot or "Post as me"), a thread
+style, and a schedule (days, `HH:MM`, IANA timezone). Statuses are `ACTIVE`,
+`PAUSED` (owner) and `DISABLED` (admin only; the owner cannot resume it).
+
+### Execution flow
+
+```
+POST /api/cron/standups  (every 5–15 min, Bearer CRON_SECRET)
+  ▼
+ACTIVE automations whose owner is ACTIVE and whose GitHub + Slack
+integrations are CONNECTED
+  ▼
+getDueRun(): scheduled HH:MM on a selected weekday *in the automation's
+timezone*, within a 6-hour grace window (also checks the previous local day)
+  + FAILED executions whose retry time has arrived
+  ▼
+claim Execution (unique idempotencyKey "<automationId>:<localDate>")
+  ├─ SUCCESS already          → no-op
+  ├─ RUNNING, live lease      → no-op (another worker has it)
+  └─ new / expired lease / due retry → this worker owns it
+  ▼
+GitHub: commits authored by the connected user in [local midnight, next
+local midnight), per branch or all branches (deduped), merges dropped
+  └─ none → SKIPPED (nothing posted)
+  ▼
+Nemotron → JSON {"summary": [...]} → Zod validation (shape, length, no Slack
+control syntax, no meaningless or duplicate bullets, ≤ one bullet per commit)
+  └─ invalid → retried with backoff; never posted if still invalid
+  ▼
+Slack: find today's parent (DB anchor → channel history by metadata or exact
+header text) or create "📅 Wednesday, September 30, 2026"; reply in thread
+with metadata {execution_key}
+  ▼
+store parent ts, reply ts, permalink → SUCCESS, audit AUTOMATION_EXECUTED
+```
+
+### Duplicate protection
+
+- `Execution.idempotencyKey` is unique per automation per local date, so only
+  one row — and one owner — can exist for a day, whether triggered by the
+  scheduler or **Run now**.
+- AI output and the parent `ts` are saved as soon as they exist; a resumed run
+  reuses them instead of generating a different message or a second parent.
+- Every Slack post carries message metadata with the execution key. Before
+  posting on a resumed attempt, the thread is scanned for that key, so a crash
+  between "posted" and "saved" cannot create a second message.
+- `SlackThreadAnchor` is unique per (team, channel, date, header), so concurrent
+  automations posting to one channel converge on a single daily parent.
+
+**Test Automation** is a dry run: it uses real GitHub data, a real Nemotron
+summary and a real Slack channel-access check, shows the exact message, and
+posts nothing. **Run now** posts for real and counts as that day's update.
+
+### Retry policy
+
+Transient provider failures (rate limits with `Retry-After`, 5xx, timeouts,
+invalid AI output) are retried in-process with exponential backoff and jitter,
+then re-attempted by the scheduler at 10 and 20 minutes (3 attempts total).
+Permanent failures — revoked tokens, missing scopes, archived channels,
+unavailable repositories, invalid timezones — are recorded with a user-facing
+reason and not retried. A GitHub 401 or Slack `token_revoked` flips that
+integration to `REVOKED` and the UI asks the user to reconnect.
+
+## Roles and access control
+
+New users always get role `USER`; the role cannot be chosen in the app. Grant
+the first administrator from a machine with database access:
+
+```bash
+npm run admin:grant -- you@example.com          # promote
+npm run admin:grant -- you@example.com --revoke # demote
+```
+
+Every sensitive operation checks, on the server: authentication → account
+status (`DISABLED` users are signed out everywhere and cannot sign in) → role
+permission (`lib/rbac`) → resource ownership. Mutations look records up by
+`{ id, userId }`, and another user's resource is reported as `404`, so IDs
+cannot be probed. Admins can read all automations and executions and
+enable/disable users and automations, but cannot edit or delete another user's
+automation, run it, or see any OAuth token — admin queries never select
+credential columns.
+
 ## Local development
 
 Requirements: Node.js 20+ (developed on 24) and a PostgreSQL database.
@@ -197,6 +297,7 @@ Available scripts:
 | `npm run lint`      | ESLint (flat config, `eslint-config-next`)  |
 | `npm run typecheck` | `tsc --noEmit`                              |
 | `npm test`          | Vitest suite                                |
+| `npm run admin:grant -- <email>` | Promote a user to ADMIN (`--revoke` to demote) |
 | `npm run db:migrate`| `prisma migrate dev`                        |
 | `npm run db:deploy` | `prisma migrate deploy` (production)        |
 | `npm run db:studio` | Prisma Studio                               |
@@ -204,40 +305,52 @@ Available scripts:
 > The Prisma client is generated into `src/generated/prisma` (gitignored), so
 > run `npx prisma generate` after cloning or after changing the schema.
 
+## Google sign-in setup
+
+1. Google Cloud console → **APIs & Services → Credentials → Create credentials
+   → OAuth client ID** → *Web application*.
+2. Authorized redirect URI: `<NEXT_PUBLIC_APP_URL>/api/auth/callback/google`
+   (e.g. `http://localhost:3000/api/auth/callback/google`).
+3. Put the client ID and secret in `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`,
+   and generate `AUTH_SECRET` (`openssl rand -base64 32`).
+
+Only verified Google emails can sign in. Google tokens are discarded after
+sign-in — only the identity is stored.
+
 ## GitHub OAuth setup
 
-GreenGrid uses a **GitHub OAuth App** (not a GitHub App). No `GITHUB_APP_*`
-variables are needed and none are referenced in the code.
+GitHub is an *integration*, connected from Settings after sign-in. A **GitHub
+App** is recommended (fine-grained, per-repository access and expiring,
+refreshable user tokens); a classic OAuth App also works.
 
-1. Go to <https://github.com/settings/developers> → **OAuth Apps** → **New OAuth App**.
-2. Fill in:
-   - **Application name:** GreenGrid (or your own name)
-   - **Homepage URL:** `http://localhost:3000` for development, your deployed
-     origin in production
-   - **Authorization callback URL:**
-     `http://localhost:3000/api/auth/github/callback`
-     (in production: `<NEXT_PUBLIC_APP_URL>/api/auth/github/callback` — it must
-     match exactly, including scheme and trailing path)
-3. Register the app, then **Generate a new client secret**.
-4. Copy the Client ID into `GITHUB_CLIENT_ID` and the secret into
-   `GITHUB_CLIENT_SECRET`.
+**GitHub App (recommended).** <https://github.com/settings/apps> → **New GitHub App**:
 
-If you deploy to several environments, register one OAuth App per environment —
-GitHub matches the callback URL strictly.
+- **Callback URL:** `<NEXT_PUBLIC_APP_URL>/api/auth/github/callback`
+- **Request user authorization (OAuth) during installation:** on;
+  **Expire user authorization tokens:** on (GreenGrid refreshes them).
+- **Repository permissions:** *Contents: Read and write* (read commits for
+  standups; write only for commit-activity schedules — use *Read-only* if you
+  do not use that feature), *Metadata: Read-only*.
+- **Account permissions:** *Email addresses: Read-only*.
+- Install the App on the accounts/repositories users should be able to select,
+  and set `GITHUB_APP_SLUG` to show a "Manage repository access" link.
+
+Copy the App's Client ID/secret into `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`.
+The callback path is the same one earlier GreenGrid versions used, so an
+existing App keeps working.
 
 ### The OAuth flow
 
-1. `GET /api/auth/github` mints a random `state`, stores it in an httpOnly
-   cookie, and redirects to GitHub.
-2. GitHub redirects back to `/api/auth/github/callback`. The handler
-   constant-time compares the returned `state` against the cookie (CSRF
-   protection), exchanges the code for an access token server-side, encrypts the
-   token, upserts the account and opens a session.
-3. The browser only ever receives an opaque session cookie.
+1. `GET /api/integrations/github/connect` (signed-in users only) mints a random
+   `state` bound to the user, stores it in an httpOnly cookie and redirects.
+2. `/api/auth/github/callback` verifies the state and that the same user is
+   still signed in, exchanges the code server-side, encrypts the tokens and
+   links the GitHub identity to the user. One GitHub identity can be connected
+   to one GreenGrid user.
 
 ## Required GitHub permissions
 
-GreenGrid requests these OAuth scopes:
+With a classic OAuth App, GreenGrid requests these scopes:
 
 | Scope        | Why                                                                     |
 | ------------ | ----------------------------------------------------------------------- |
@@ -256,6 +369,66 @@ Before enabling automation, GreenGrid verifies for the selected repository that:
 - the default branch exists.
 
 Repositories failing any of these checks cannot be selected or scheduled.
+
+Standup automations only **read**: the repository list, branches, and commits
+filtered by `author=<your login>` and the day's time window. Every selected
+repository and branch is re-verified with the user's own token when an
+automation is saved.
+
+## Slack app setup
+
+Create an app at <https://api.slack.com/apps> → **From scratch**.
+
+1. **OAuth & Permissions → Redirect URLs:**
+   `<NEXT_PUBLIC_APP_URL>/api/integrations/slack/callback` (HTTPS required;
+   use a tunnel such as `ngrok` for local development).
+2. **Bot token scopes:** `chat:write`, `channels:read`, `groups:read`,
+   `channels:history`, `groups:history`, `channels:join`. These are the defaults
+   when `SLACK_BOT_SCOPES` is empty.
+3. **User token scopes** (for "Post as me"): `chat:write`, `channels:read`,
+   `groups:read`, `channels:history`, `groups:history`. One Connect requests the
+   bot and user scopes together, so every automation can post as the app or as
+   the user. These are the defaults when `SLACK_USER_SCOPES` is empty; set it to
+   `none` to offer bot posting only. The Slack app must list every requested
+   scope, or Slack rejects the install with `invalid_scope`.
+4. **Basic Information:** copy Client ID, Client Secret and Signing Secret into
+   `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `SLACK_SIGNING_SECRET`.
+5. Optional: **Event Subscriptions** → Request URL
+   `<NEXT_PUBLIC_APP_URL>/api/webhooks/slack/events`, subscribe to the bot
+   events `app_uninstalled` and `tokens_revoked`. Every request's signature and
+   timestamp are verified.
+6. To post to a workspace other than your own, enable **Manage Distribution**.
+
+Bot posting joins public channels automatically; for private channels, invite
+the app first (`/invite @YourApp`). "Post as me" posts with the user's own token
+— it is never simulated with the bot token. Token rotation is supported: if
+Slack issues refresh tokens, they are stored encrypted and used automatically.
+
+## NVIDIA API setup
+
+Create an API key at <https://build.nvidia.com> and set `NVIDIA_API_KEY`.
+`NVIDIA_BASE_URL` defaults to `https://integrate.api.nvidia.com/v1` and
+`NVIDIA_MODEL` to `nvidia/nemotron-3-super-120b-a12b`. Only commit messages
+(plus optional file names/line counts and the user's note) are sent — never
+source code — and only from the server.
+
+## Upgrading an existing GreenGrid deployment
+
+The `20260930000000_standup_automations` migration:
+
+- renames `github_accounts` → `github_integrations` in place (stored tokens are
+  kept, now nullable so disconnecting can wipe them),
+- adds identity, role and status columns to `users`, and the new `accounts`,
+  `slack_integrations`, `automations`, `executions`, `slack_thread_anchors`,
+  `audit_logs` and `cron_runs` tables,
+- **deletes all rows in `sessions`** — everyone signs in again with Google.
+
+Users who previously signed in with GitHub sign in with Google and then connect
+the same GitHub account; GreenGrid recognises the earlier account (it has no
+email) and moves its repositories, schedules and history to the new user. Set
+the new variables (`AUTH_SECRET`, `GOOGLE_*`, Slack, NVIDIA); the old
+`GITHUB_TOKEN_ENCRYPTION_KEY` keeps working, or rename it to `ENCRYPTION_KEY`
+with the same value.
 
 ## Database setup
 
@@ -276,9 +449,16 @@ the CLI reads `DATABASE_URL` through `prisma.config.ts`.
 
 | Model               | Purpose                                                        |
 | ------------------- | -------------------------------------------------------------- |
-| `User`              | Account root; holds automation defaults                        |
-| `GitHubAccount`     | One per user; encrypted token, profile fields, granted scopes  |
-| `Session`           | Opaque server-side session (`tokenHash` unique, TTL 14 days)   |
+| `User`              | Google identity, `role` (USER/ADMIN), `status` (ACTIVE/DISABLED), defaults |
+| `Account`           | Auth.js provider link (no provider tokens stored)              |
+| `Session`           | Auth.js database session; only the token hash is stored        |
+| `GitHubIntegration` | One per user; encrypted tokens, status, profile fields         |
+| `SlackIntegration`  | Per user per workspace; encrypted bot/user tokens, scopes, status |
+| `Automation`        | Standup automation configuration and status                    |
+| `Execution`         | One row per automation per local day (unique idempotency key), step statuses, AI output, Slack ts |
+| `SlackThreadAnchor` | One daily parent per channel/date/header (unique)              |
+| `AuditLog`          | Actor, action, target, sanitised metadata                      |
+| `CronRun`           | Scheduler tick history for the admin System page               |
 | `Repository`        | Mirror of the repositories you can act on; one `selected`      |
 | `Schedule`          | enabled / timezone / commitsPerDay / daysOfWeek / commit message |
 | `ActivityExecution` | One row per run, with status, commit SHA/URL and error message |
@@ -295,28 +475,37 @@ the offending keys and never their values.
 
 | Variable                      | Required | Purpose                                                                 |
 | ----------------------------- | :------: | ----------------------------------------------------------------------- |
+| `NEXT_PUBLIC_APP_URL`         |    ✅    | Public origin; OAuth redirect URIs and the CSRF origin check.           |
 | `DATABASE_URL`                |    ✅    | PostgreSQL connection string.                                           |
-| `GITHUB_CLIENT_ID`            |    ✅    | OAuth App client ID.                                                    |
-| `GITHUB_CLIENT_SECRET`        |    ✅    | OAuth App client secret.                                                |
-| `GITHUB_TOKEN_ENCRYPTION_KEY` |    ✅    | Base64 of **32 random bytes**; AES-256-GCM key for tokens at rest.       |
-| `CRON_SECRET`                 |    ✅    | Bearer secret required by `/api/cron/activity`.                          |
-| `NEXT_PUBLIC_APP_URL`         |    ✅    | Public origin; used to build the OAuth redirect URI.                     |
-| `UPSTASH_REDIS_REST_URL`      |    —     | Enables distributed rate limiting when set with the token below.         |
-| `UPSTASH_REDIS_REST_TOKEN`    |    —     | Upstash REST token.                                                      |
+| `AUTH_SECRET`                 |    ✅    | Auth.js secret.                                                         |
+| `GOOGLE_CLIENT_ID` / `_SECRET`|    ✅    | Google OAuth client.                                                    |
+| `GITHUB_CLIENT_ID` / `_SECRET`|    ✅    | GitHub App (or OAuth App) credentials.                                  |
+| `GITHUB_APP_SLUG`             |    —     | Enables the "Manage repository access" link.                            |
+| `SLACK_CLIENT_ID` / `_SECRET` |  Slack   | Slack app credentials. Without them, Slack features are disabled.       |
+| `SLACK_SIGNING_SECRET`        |    —     | Enables the signed Events endpoint.                                     |
+| `SLACK_BOT_SCOPES`            |    —     | Comma-separated; sensible defaults when empty.                          |
+| `SLACK_USER_SCOPES`           |    —     | "Post as me" scopes (sensible default); `none` disables it.             |
+| `NVIDIA_API_KEY`              |    AI    | Required to generate summaries.                                         |
+| `NVIDIA_BASE_URL` / `NVIDIA_MODEL` | — | Default to the NVIDIA endpoint and Nemotron 3 Super.                    |
+| `CRON_SECRET`                 |    ✅    | Bearer secret for `/api/cron/*`.                                        |
+| `ENCRYPTION_KEY`              |    ✅    | Base64 of **32 random bytes**; AES-256-GCM key for tokens at rest. (`GITHUB_TOKEN_ENCRYPTION_KEY` accepted for existing deployments.) |
+| `UPSTASH_REDIS_REST_URL` / `_TOKEN` | — | Distributed rate limiting (recommended with multiple instances).    |
+| `LOG_LEVEL`                   |    —     | `debug`, `info`, `warn`, `error`.                                       |
 
 Generate the secrets:
 
 ```bash
-# GITHUB_TOKEN_ENCRYPTION_KEY (must decode to exactly 32 bytes)
+# ENCRYPTION_KEY (must decode to exactly 32 bytes)
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 
-# CRON_SECRET
-node -e "console.log(require('crypto').randomBytes(24).toString('base64url'))"
+# AUTH_SECRET and CRON_SECRET
+openssl rand -base64 32
 ```
 
 `NEXT_PUBLIC_APP_URL` is the only public variable and holds no secret. Rotating
-`GITHUB_TOKEN_ENCRYPTION_KEY` invalidates every stored token — users will be
-asked to reconnect GitHub.
+`ENCRYPTION_KEY` invalidates every stored token — users will be asked to
+reconnect GitHub and Slack. The admin **System** page shows which areas are
+configured (never the values).
 
 ## Prisma migrations
 
@@ -326,17 +515,29 @@ npx prisma migrate dev       # create + apply a migration in development
 npx prisma migrate deploy    # apply pending migrations in production
 ```
 
-An initial migration is committed at
-`prisma/migrations/20260901000000_init/migration.sql`. On a fresh database,
-`npx prisma migrate deploy` is enough to create the full schema.
+Migrations are committed under `prisma/migrations/`. On a fresh database,
+`npx prisma migrate deploy` is enough to create the full schema; on an existing
+one it applies `20260930000000_standup_automations` (see
+[Upgrading](#upgrading-an-existing-greengrid-deployment)).
 
 ## Cron configuration
 
 The scheduler is entirely external — GreenGrid never relies on an in-process
 `setTimeout` or `setInterval`, so it works on serverless platforms.
 
-**Endpoint:** `POST /api/cron/activity` (`GET` is accepted too, for schedulers
-such as Vercel Cron that only issue GETs).
+**Endpoints:** `POST /api/cron/standups` (standup automations) and
+`POST /api/cron/activity` (commit-activity schedules). `GET` is accepted too,
+for schedulers such as Vercel Cron that only issue GETs. The shipped GitHub
+Actions workflow calls both every 15 minutes.
+
+`/api/cron/standups` processes due automations with bounded concurrency inside
+a 45-second budget; anything not reached is picked up on the next tick, which
+the idempotency key makes safe. Each tick is recorded in `cron_runs` and shown
+on **Admin → System**. Because due-ness is computed per automation in its own
+IANA timezone (never the server's), "Monday–Friday 5:00 PM Asia/Kolkata" fires
+at 11:30 UTC on those days, and DST zones shift correctly.
+
+The rest of this section describes `/api/cron/activity`.
 
 **Auth:** `Authorization: Bearer <CRON_SECRET>`, compared in constant time.
 
@@ -379,8 +580,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: |
-          curl -fsS -X POST "$APP_URL/api/cron/activity" \
-            -H "Authorization: Bearer $CRON_SECRET"
+          for endpoint in activity standups; do
+            curl -fsS -X POST "$APP_URL/api/cron/$endpoint" \
+              -H "Authorization: Bearer $CRON_SECRET"
+          done
         env:
           APP_URL: ${{ secrets.APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
@@ -410,13 +613,22 @@ jobs:
    in `vercel.json` and deleting the workflow:
 
    ```json
-   { "crons": [{ "path": "/api/cron/activity", "schedule": "*/15 * * * *" }] }
+   {
+     "crons": [
+       { "path": "/api/cron/activity", "schedule": "*/15 * * * *" },
+       { "path": "/api/cron/standups", "schedule": "*/10 * * * *" }
+     ]
+   }
    ```
 
    Vercel attaches `Authorization: Bearer $CRON_SECRET` automatically when a
    `CRON_SECRET` environment variable exists on the project.
-6. Update your GitHub OAuth App's callback URL to
-   `https://<your-domain>/api/auth/github/callback`.
+6. Set the callback/redirect URLs: GitHub
+   `https://<your-domain>/api/auth/github/callback`, Google
+   `https://<your-domain>/api/auth/callback/google`, Slack
+   `https://<your-domain>/api/integrations/slack/callback`.
+7. Sign in once, then run `npm run admin:grant -- <your email>` against the
+   production database to create the first administrator.
 
 Hobby-plan note: Vercel Cron runs at most once per day on the Hobby tier and
 caps function duration at 60 seconds. That is why the shipped scheduler is the
@@ -428,7 +640,27 @@ GitHub Actions workflow above rather than a Vercel cron entry.
 npm test
 ```
 
-123 tests cover:
+243 tests. Standup automations and platform:
+
+- duplicate-execution protection — concurrent runs, re-runs, crash-after-post
+  resume, stored-AI-output reuse, shared daily parent across automations
+  (`tests/duplicate-execution.test.ts`, engine against in-memory fakes),
+- authentication: sign-in policy, first-login role, hashed sessions, disabled
+  users, provider tokens not stored (`tests/auth.test.ts`),
+- RBAC and IDOR (`tests/rbac.test.ts`), two users cannot access each other's
+  automations or executions (`tests/automation-ownership.test.ts`), admin
+  authorization and no-token queries (`tests/admin-authorization.test.ts`),
+- GitHub commit filtering by author, local-day window, merges and cross-branch
+  dedupe (`tests/commit-filter.test.ts`),
+- timezone/DST schedule math and scheduler selection, budgets and retry policy
+  (`tests/automation-schedule.test.ts`, `tests/scheduler.test.ts`),
+- AI output validation and prompt construction (`tests/ai-validation.test.ts`),
+- Slack message escaping, thread detection, error mapping and request
+  signatures (`tests/slack.test.ts`),
+- token encryption (including the legacy key), log redaction and audit
+  metadata sanitisation (`tests/secrets-hygiene.test.ts`).
+
+Commit activity:
 
 - timezone conversion and DST correctness (`tests/timezone.test.ts`),
 - commit slot derivation, next-run and due-run calculation
@@ -444,24 +676,43 @@ npm test
   (`tests/encryption.test.ts`),
 - rate limiting (`tests/rate-limit.test.ts`).
 
-No test performs a real GitHub or database call — Octokit and Prisma are mocked.
+No test performs a real GitHub, Slack, NVIDIA or database call.
+
+What the tests cannot prove is the live integration: end-to-end runs against
+real Google, GitHub, Slack and NVIDIA accounts need real credentials. Verify a
+deployment by signing in, connecting GitHub and Slack, creating an automation,
+using **Test Automation** (dry run), then **Run now**, and checking the
+execution detail page and the Slack thread.
 
 ## Security considerations
 
-**Token handling.** GitHub access tokens are encrypted with AES-256-GCM (random
-12-byte IV per record, authenticated) before storage. They are decrypted only
-inside `getGitHubClient()` on the server. Tokens never appear in API responses,
-logs, error messages, URLs, or browser storage. `toGitHubApiError()` deliberately
-discards GitHub's raw message and returns a fixed, user-safe string.
+**Token handling.** GitHub and Slack tokens are encrypted with AES-256-GCM
+(random 12-byte IV per record, authenticated) before storage and decrypted only
+inside the provider clients on the server. Google tokens are not stored. Tokens
+never appear in API responses, logs, error messages, URLs, audit metadata, or
+browser storage; the structured logger additionally redacts credential-shaped
+keys and known token formats. Admin views select integration status only.
 
-**Sessions.** A session is a 256-bit random token stored in an httpOnly,
-`SameSite=Lax`, `Secure`-in-production cookie. Only its SHA-256 hash is stored in
-the database. Expired sessions are pruned on each cron run. Logout is `POST`-only
-so a cross-site link cannot end a session.
+**Sessions.** Auth.js database sessions: a random token in an httpOnly,
+`SameSite=Lax`, `__Secure-` (HTTPS) cookie; only its SHA-256 hash is stored.
+Disabling a user deletes all their sessions, and the session adapter refuses
+disabled users. Expired sessions are pruned on each cron run.
 
-**CSRF.** The OAuth flow binds a random `state` to a short-lived httpOnly cookie
-and compares it in constant time. State-changing API routes are `POST`/`PATCH`/
-`DELETE` with JSON bodies and same-origin cookies.
+**CSRF.** Auth.js enforces its CSRF token on sign-in/sign-out. Integration OAuth
+flows use a single-use `state` bound to the signed-in user and compared in
+constant time. Every cookie-authenticated mutation (`POST`/`PATCH`/`DELETE`)
+must carry an `Origin` (or `Referer`) matching `NEXT_PUBLIC_APP_URL`, on top of
+SameSite cookies.
+
+**AI output.** Model output is untrusted: it must parse as JSON, pass a strict
+Zod schema (shape, length, no Slack mention/link syntax, no meaningless or
+duplicate bullets, no more bullets than commits), and is then HTML-escaped for
+Slack and placed into an application-built template. Commit messages and the
+user's note are passed to the model as delimited data with an instruction to
+ignore instructions inside them.
+
+**Webhooks.** `/api/webhooks/slack/events` verifies the Slack v0 HMAC signature
+over the raw body and rejects requests older than five minutes.
 
 **Authorization / IDOR.** Every route resolves the user from the session and
 scopes each query by `userId`. A schedule or repository belonging to someone else

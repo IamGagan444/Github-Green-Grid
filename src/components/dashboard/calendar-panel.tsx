@@ -17,8 +17,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useQuery } from "@tanstack/react-query";
+
 import { apiFetch, messageFor } from "@/lib/client/api-client";
+import { queryKeys } from "@/lib/client/query-keys";
 import { formatDuration, shortSha } from "@/lib/format";
+import { timezoneLabel } from "@/lib/schedule/timezone";
 import type { CalendarDay } from "@/lib/activity/types";
 
 interface DayExecution {
@@ -42,33 +46,24 @@ interface CalendarPanelProps {
 /** Calendar card plus the day-detail dialog opened by clicking a cell. */
 export function CalendarPanel({ startDate, endDate, days, timezone }: CalendarPanelProps) {
   const [selectedDay, setSelectedDay] = React.useState<CalendarDay | null>(null);
-  const [rows, setRows] = React.useState<DayExecution[] | null>(null);
-  const [error, setError] = React.useState<string | null>(null);
 
-  // Loading is driven by the click, not by an effect, so opening the dialog
-  // never triggers a cascading render.
-  const requestId = React.useRef(0);
+  const dayQuery = useQuery({
+    queryKey: queryKeys.calendarDay(selectedDay?.date ?? ""),
+    queryFn: () =>
+      apiFetch<{ rows: DayExecution[] }>(
+        "/api/github/activity?view=day&date=" + encodeURIComponent(selectedDay?.date ?? ""),
+      ),
+    enabled: selectedDay !== null,
+    select: (data) => data.rows,
+  });
+  const rows = dayQuery.data ?? null;
+  const error = dayQuery.error ? messageFor(dayQuery.error) : null;
 
-  async function openDay(day: CalendarDay) {
-    const currentRequest = requestId.current + 1;
-    requestId.current = currentRequest;
-
+  function openDay(day: CalendarDay) {
     setSelectedDay(day);
-    setRows(null);
-    setError(null);
-
-    try {
-      const data = await apiFetch<{ rows: DayExecution[] }>(
-        "/api/github/activity?view=day&date=" + encodeURIComponent(day.date),
-      );
-      if (requestId.current === currentRequest) setRows(data.rows);
-    } catch (cause) {
-      if (requestId.current === currentRequest) setError(messageFor(cause));
-    }
   }
 
   function closeDay() {
-    requestId.current += 1;
     setSelectedDay(null);
   }
 
@@ -77,14 +72,14 @@ export function CalendarPanel({ startDate, endDate, days, timezone }: CalendarPa
       <Card>
         <CardHeader className="flex-row items-center justify-between gap-3">
           <CardTitle>Contribution calendar</CardTitle>
-          <span className="text-xs text-muted-foreground">{timezone}</span>
+          <span className="text-xs text-muted-foreground">{timezoneLabel(timezone)}</span>
         </CardHeader>
         <CardContent className="pt-4">
           <ContributionCalendar
             startDate={startDate}
             endDate={endDate}
             activities={days}
-            onSelectDay={(day) => void openDay(day)}
+            onSelectDay={openDay}
           />
         </CardContent>
       </Card>

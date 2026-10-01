@@ -6,6 +6,8 @@
  * which is the one the user actually wants. Aliases close that gap.
  */
 
+import { timezoneLabel } from "@/lib/schedule/timezone";
+
 /** Zones offered before the user types anything. */
 export const COMMON_TIMEZONES = [
   "Asia/Kolkata",
@@ -126,7 +128,7 @@ export function searchTimezones(
       if (aliased.has(zone)) return { zone, score: 0 };
       if (city.startsWith(needle)) return { zone, score: 1 };
       if (city.includes(needle)) return { zone, score: 2 };
-      if (id.includes(needle)) return { zone, score: 3 };
+      if (id.includes(needle) || timezoneLabel(zone).toLowerCase().includes(needle)) return { zone, score: 3 };
       return null;
     })
     .filter((entry): entry is { zone: string; score: number } => entry !== null);

@@ -1,15 +1,8 @@
-"use client";
-
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-
-import { isNavItemActive, NAV_ITEMS } from "@/components/layout/nav-items";
-import { cn } from "@/lib/utils";
+import { MOBILE_NAV_ITEMS } from "@/components/layout/nav-items";
+import { NavLink } from "@/components/layout/nav-link";
 
 /** Bottom navigation shown below the md breakpoint. */
 export function MobileNav() {
-  const pathname = usePathname();
-
   return (
     <nav
       aria-label="Main"
@@ -17,24 +10,19 @@ export function MobileNav() {
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       <ul className="grid grid-cols-5">
-        {NAV_ITEMS.map((item) => {
-          const active = isNavItemActive(pathname, item.href);
+        {MOBILE_NAV_ITEMS.map((item) => {
           const Icon = item.icon;
-
           return (
             <li key={item.href}>
-              <Link
+              <NavLink
                 href={item.href}
-                aria-current={active ? "page" : undefined}
-                className={cn(
-                  "flex flex-col items-center gap-1 px-1 py-2.5 text-[10px] transition-colors",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
-                  active ? "text-primary" : "text-muted-foreground",
-                )}
+                className="flex flex-col items-center gap-1 px-1 py-2.5 text-[10px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+                activeClassName="text-primary"
+                inactiveClassName="text-muted-foreground"
               >
                 <Icon className="size-5" aria-hidden="true" />
                 <span className="truncate">{item.label}</span>
-              </Link>
+              </NavLink>
             </li>
           );
         })}

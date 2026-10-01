@@ -3,13 +3,17 @@ import "server-only";
 import { getAppUrl, getEnv } from "@/lib/env";
 
 /**
- * Scopes requested at authorization time.
+ * GreenGrid authenticates as a GitHub App acting on behalf of the user
+ * (user-to-server tokens). For a GitHub App, access is governed by the App's
+ * fine-grained permissions and the repositories it is installed on — the
+ * `scope` parameter is ignored. Required App permissions:
  *
- * - `repo`       write access to the repository the user selects, including
- *                private repositories. GitHub has no narrower scope for
- *                committing to a private repo via the Contents API.
- * - `read:user`  profile fields shown in the dashboard.
- * - `user:email` primary email, used only for account identification.
+ * - Contents: Read & write — read commits for standups; write the GreenGrid
+ *   activity file (commit-activity feature only).
+ * - Metadata: Read-only — list repositories and branches.
+ * - Account permissions → Email addresses: Read-only — identify the user.
+ *
+ * The scopes below apply only if the credentials belong to a classic OAuth App.
  */
 export const OAUTH_SCOPES = ["repo", "read:user", "user:email"] as const;
 
@@ -30,9 +34,3 @@ export function buildAuthorizeUrl(state: string): string {
   return url.toString();
 }
 
-/** Only same-origin relative paths are accepted as post-login destinations. */
-export function sanitiseReturnTo(value: string | null): string {
-  if (!value) return "/dashboard";
-  if (!value.startsWith("/") || value.startsWith("//")) return "/dashboard";
-  return value;
-}

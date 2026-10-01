@@ -21,3 +21,11 @@ export type {
   CommitResult,
   RepositoryWriteCheck,
 } from "@/lib/github/types";
+export { listBranches, fetchAuthoredCommits, MAX_BRANCHES_SCANNED } from "@/lib/github/github-activity";
+export { filterAuthoredCommits, sanitiseCommitMessage } from "@/lib/github/commit-filter";
+export type {
+  GitHubBranchSummary,
+  RawCommit,
+  CommitQuery,
+  AuthoredCommit,
+} from "@/lib/github/types";

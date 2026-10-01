@@ -35,17 +35,18 @@ function decrypt(ciphertext: string): string {
  * Octokit instance, never the token itself. Nothing here logs the credential.
  */
 export async function getGitHubClient(userId: string): Promise<Octokit> {
-  const account = await prisma.gitHubAccount.findUnique({
+  const account = await prisma.gitHubIntegration.findUnique({
     where: { userId },
     select: {
+      status: true,
       accessTokenEncrypted: true,
       refreshTokenEncrypted: true,
       tokenExpiresAt: true,
     },
   });
 
-  if (!account) {
-    throw new GitHubApiError("UNAUTHORIZED", 401, "No GitHub account linked to this user");
+  if (!account || account.status !== "CONNECTED" || !account.accessTokenEncrypted) {
+    throw new GitHubApiError("UNAUTHORIZED", 401, "No connected GitHub integration for this user");
   }
 
   const expiresSoon =
@@ -89,7 +90,7 @@ async function refreshStoredToken(userId: string, refreshToken: string): Promise
       refresh_token: refreshToken,
     });
   } catch (error) {
-    const current = await prisma.gitHubAccount.findUnique({
+    const current = await prisma.gitHubIntegration.findUnique({
       where: { userId },
       select: { accessTokenEncrypted: true, tokenExpiresAt: true },
     });
@@ -99,11 +100,11 @@ async function refreshStoredToken(userId: string, refreshToken: string): Promise
       current.tokenExpiresAt !== null &&
       current.tokenExpiresAt.getTime() - EXPIRY_SKEW_MS >= Date.now();
 
-    if (stillValid && current) return decrypt(current.accessTokenEncrypted);
+    if (stillValid && current?.accessTokenEncrypted) return decrypt(current.accessTokenEncrypted);
     throw error;
   }
 
-  await prisma.gitHubAccount.update({
+  await prisma.gitHubIntegration.update({
     where: { userId },
     data: {
       accessTokenEncrypted: encryptSecret(refreshed.accessToken),

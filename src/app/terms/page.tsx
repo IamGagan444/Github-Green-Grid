@@ -1,13 +1,13 @@
 import type { Metadata } from "next";
 
 import { MarketingShell } from "@/components/marketing/marketing-shell";
-import { getSessionUser } from "@/lib/session";
+import { getCurrentUser } from "@/lib/auth/session";
 
 export const metadata: Metadata = { title: "Terms" };
 export const dynamic = "force-dynamic";
 
 export default async function TermsPage() {
-  const user = await getSessionUser();
+  const user = await getCurrentUser();
 
   return (
     <MarketingShell isAuthenticated={user !== null}>

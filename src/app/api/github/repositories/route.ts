@@ -1,6 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { ApiError, handleApiError, readJson, requireApiUser } from "@/lib/api";
+import { assertSameOrigin, ApiError, handleApiError, readJson, requireApiUser } from "@/lib/api";
 import { rateLimit, rateLimitHeaders, RATE_LIMITS } from "@/lib/rate-limit";
 import {
   listStoredRepositories,
@@ -37,6 +37,7 @@ export async function GET(request: NextRequest) {
 /** Selects the repository GreenGrid is allowed to update. */
 export async function POST(request: NextRequest) {
   try {
+    assertSameOrigin(request);
     const user = await requireApiUser();
 
     const limit = await rateLimit(`repos:select:${user.userId}`, RATE_LIMITS.scheduleWrite);

@@ -2,14 +2,15 @@ import crypto from "node:crypto";
 import "server-only";
 
 /**
- * Authenticated encryption for GitHub credentials at rest.
+ * Authenticated encryption for OAuth credentials (GitHub, Slack) at rest.
  *
  * Format: `v1.<iv-b64>.<authTag-b64>.<ciphertext-b64>`
  * Algorithm: AES-256-GCM with a random 12-byte IV per record.
  *
  * Generate a key with:
  *   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
- * and set it as GITHUB_TOKEN_ENCRYPTION_KEY.
+ * and set it as ENCRYPTION_KEY. The legacy GITHUB_TOKEN_ENCRYPTION_KEY name is
+ * still read so existing deployments can decrypt stored credentials.
  */
 
 const ALGORITHM = "aes-256-gcm";
@@ -21,15 +22,15 @@ let cachedKey: Buffer | null = null;
 function getKey(): Buffer {
   if (cachedKey) return cachedKey;
 
-  const raw = process.env.GITHUB_TOKEN_ENCRYPTION_KEY;
+  const raw = process.env.ENCRYPTION_KEY?.trim() || process.env.GITHUB_TOKEN_ENCRYPTION_KEY?.trim();
   if (!raw) {
-    throw new Error("GITHUB_TOKEN_ENCRYPTION_KEY is not configured");
+    throw new Error("ENCRYPTION_KEY is not configured");
   }
 
   const key = Buffer.from(raw, "base64");
   if (key.length !== 32) {
     throw new Error(
-      "GITHUB_TOKEN_ENCRYPTION_KEY must decode to exactly 32 bytes (base64 of 32 random bytes)",
+      "ENCRYPTION_KEY must decode to exactly 32 bytes (base64 of 32 random bytes)",
     );
   }
 
@@ -77,6 +78,15 @@ export function safeCompare(a: string, b: string): boolean {
   const bufB = Buffer.from(b, "utf8");
   if (bufA.length !== bufB.length) return false;
   return crypto.timingSafeEqual(bufA, bufB);
+}
+
+/** Test helper: forgets the cached key so a test can swap ENCRYPTION_KEY. */
+export function resetEncryptionKeyCache(): void {
+  cachedKey = null;
+}
+
+export function hmacSha256Hex(secret: string, payload: string): string {
+  return crypto.createHmac("sha256", secret).update(payload, "utf8").digest("hex");
 }
 
 export function hashToken(token: string): string {
