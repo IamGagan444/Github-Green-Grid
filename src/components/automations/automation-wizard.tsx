@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Controller, useForm, useWatch, type FieldPath } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ArrowRight, FlaskConical, GitBranch, Lock, RefreshCw, Save, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, FlaskConical, GitBranch, Lock, Plus, RefreshCw, Save, X } from "lucide-react";
 import { toast } from "sonner";
 import type { z } from "zod";
 
@@ -28,7 +28,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Textarea } from "@/components/ui/textarea";
-import { formatScheduleTime, getNextRun, localDayKey } from "@/lib/automation/schedule";
+import { describeScheduleTimes, getNextRun, localDayKey } from "@/lib/automation/schedule";
 import { apiFetch, messageFor } from "@/lib/client/api-client";
 import { queryKeys } from "@/lib/client/query-keys";
 import { formatDateTime } from "@/lib/format";
@@ -36,7 +36,12 @@ import { describeFrequency } from "@/lib/schedule/next-run";
 import { timezoneLabel } from "@/lib/schedule/timezone";
 import { buildDateHeader } from "@/lib/slack/message";
 import { cn } from "@/lib/utils";
-import { automationConfigSchema, MAX_SOURCES_PER_AUTOMATION } from "@/validators/automation";
+import {
+  automationConfigSchema,
+  automationFormSchema,
+  MAX_SCHEDULE_TIMES,
+  MAX_SOURCES_PER_AUTOMATION,
+} from "@/validators/automation";
 import type { PreviewResult } from "@/services/automation-service";
 import { useAppDispatch, useAppSelector } from "@/store/hooks";
 import { showPreview } from "@/store/slices/test-preview-slice";
@@ -99,7 +104,7 @@ const STEPS: Array<{ id: StepId; title: string; description: string; fields: Fie
     id: "timing",
     title: "Commit date & schedule",
     description: "Which day's commits to summarise, and when to post.",
-    fields: ["commitWindow", "daysOfWeek", "scheduleTime", "timezone"],
+    fields: ["commitWindow", "daysOfWeek", "scheduleTimes", "timezone"],
   },
   {
     id: "message",
@@ -214,7 +219,7 @@ export function AutomationWizard(props: WizardProps) {
   }, [dispatch]);
 
   const form = useForm<FormInput, unknown, FormOutput>({
-    resolver: zodResolver(automationConfigSchema),
+    resolver: zodResolver(automationFormSchema),
     defaultValues: initialValues,
     mode: "onTouched",
   });
@@ -388,14 +393,36 @@ export function AutomationWizard(props: WizardProps) {
     }
   }
 
-  const nextRun = React.useMemo(() => {
+  const scheduleTimes = values.scheduleTimes ?? [];
+  const previousDayMode = (values.commitWindow ?? "SAME_DAY") === "PREVIOUS_DAY";
+  const maxTimes = previousDayMode ? 1 : MAX_SCHEDULE_TIMES;
+
+  function setScheduleTimes(next: string[]) {
+    form.setValue("scheduleTimes", next, { shouldValidate: true, shouldDirty: true });
+  }
+
+  function addScheduleTime() {
+    const used = new Set(scheduleTimes);
+    // Suggest the next free whole hour after the latest time.
+    const latest = [...scheduleTimes].sort().at(-1);
+    const start = latest ? Number(latest.slice(0, 2)) + 1 : 9;
+    for (let offset = 0; offset < 24; offset += 1) {
+      const candidate = `${String((start + offset) % 24).padStart(2, "0")}:00`;
+      if (!used.has(candidate)) {
+        setScheduleTimes([...scheduleTimes, candidate]);
+        return;
+      }
+    }
+  }
+
+  const nextRun = (() => {
     try {
-      if (!values.timezone || !values.scheduleTime || !values.daysOfWeek?.length) return null;
-      return getNextRun({ daysOfWeek: values.daysOfWeek, scheduleTime: values.scheduleTime, timezone: values.timezone });
+      if (!values.timezone || scheduleTimes.length === 0 || !values.daysOfWeek?.length) return null;
+      return getNextRun({ daysOfWeek: values.daysOfWeek, scheduleTimes, timezone: values.timezone });
     } catch {
       return null;
     }
-  }, [values.daysOfWeek, values.scheduleTime, values.timezone]);
+  })();
 
   const current = STEPS[step] ?? STEPS[0]!;
 
@@ -722,26 +749,68 @@ export function AutomationWizard(props: WizardProps) {
                 />
                 <ErrorText message={errors.daysOfWeek?.message} />
               </div>
-              <div className="grid gap-5 sm:grid-cols-2">
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="scheduleTime">Time</Label>
-                  <Input id="scheduleTime" type="time" step={60} aria-invalid={Boolean(errors.scheduleTime)} {...form.register("scheduleTime")} />
-                  <ErrorText message={errors.scheduleTime?.message} />
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center justify-between gap-2">
+                  <Label>Post times</Label>
+                  <span className="text-xs text-muted-foreground tabular-nums">
+                    {scheduleTimes.length} / {maxTimes}
+                  </span>
                 </div>
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="timezone">Timezone</Label>
-                  <Controller
-                    control={form.control}
-                    name="timezone"
-                    render={({ field }) => <TimezoneSelector id="timezone" value={field.value} timezones={timezones} onChange={field.onChange} />}
-                  />
-                  <ErrorText message={errors.timezone?.message} />
-                </div>
+                <ul className="flex flex-wrap gap-2">
+                  {scheduleTimes.map((time, index) => (
+                    <li key={index} className="flex items-center gap-1 rounded-md border border-border bg-card pl-1">
+                      <Input
+                        type="time"
+                        step={60}
+                        value={time}
+                        aria-label={`Post time ${index + 1}`}
+                        className="h-8 w-30 border-0 bg-transparent px-2 shadow-none focus-visible:ring-0"
+                        onChange={(event) =>
+                          setScheduleTimes(scheduleTimes.map((entry, i) => (i === index ? event.target.value : entry)))
+                        }
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-7"
+                        disabled={scheduleTimes.length <= 1}
+                        onClick={() => setScheduleTimes(scheduleTimes.filter((_, i) => i !== index))}
+                        aria-label={`Remove ${time || "time"}`}
+                      >
+                        <X aria-hidden="true" />
+                      </Button>
+                    </li>
+                  ))}
+                  {scheduleTimes.length < maxTimes ? (
+                    <li>
+                      <Button type="button" variant="outline" size="sm" className="h-9" onClick={addScheduleTime}>
+                        <Plus aria-hidden="true" />
+                        Add time
+                      </Button>
+                    </li>
+                  ) : null}
+                </ul>
+                <ErrorText message={errors.scheduleTimes?.message ?? errors.scheduleTimes?.root?.message} />
+                <p className="text-xs text-muted-foreground">
+                  {previousDayMode
+                    ? "“Previous day” recaps yesterday, so it posts once a day."
+                    : "Each time posts once a day, covering only the commits since the previous post. Up to 24 times."}
+                </p>
+              </div>
+              <div className="flex flex-col gap-2 sm:max-w-sm">
+                <Label htmlFor="timezone">Timezone</Label>
+                <Controller
+                  control={form.control}
+                  name="timezone"
+                  render={({ field }) => <TimezoneSelector id="timezone" value={field.value} timezones={timezones} onChange={field.onChange} />}
+                />
+                <ErrorText message={errors.timezone?.message} />
               </div>
               <p className="text-sm text-muted-foreground">
                 {nextRun
                   ? `Next run: ${formatDateTime(nextRun.scheduledFor, values.timezone)} (${timezoneLabel(values.timezone)})`
-                  : "Choose at least one day to see the next run."}
+                  : "Choose at least one day and time to see the next run."}
               </p>
             </>
           ) : null}
@@ -830,7 +899,7 @@ function ReviewSummary({
     ["Commit date", labelFor(COMMIT_WINDOW_OPTIONS, values.commitWindow ?? "SAME_DAY")],
     [
       "Schedule",
-      `${describeFrequency(values.daysOfWeek ?? [])} at ${values.scheduleTime ? formatScheduleTime(values.scheduleTime) : "—"} (${values.timezone ? timezoneLabel(values.timezone) : "—"})`,
+      `${describeFrequency(values.daysOfWeek ?? [])} at ${describeScheduleTimes(values.scheduleTimes ?? [])} (${values.timezone ? timezoneLabel(values.timezone) : "—"})`,
     ],
     ["Next run", nextRun ? formatDateTime(nextRun, values.timezone) : "—"],
     ["Message style", labelFor(MESSAGE_STYLE_OPTIONS, values.messageStyle ?? "CONCISE")],

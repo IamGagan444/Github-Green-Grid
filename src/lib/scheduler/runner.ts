@@ -26,10 +26,11 @@ const TIME_BUDGET_MS = 45_000;
  * One scheduler tick:
  *  1. Load ACTIVE automations whose owner is ACTIVE and whose GitHub and Slack
  *     integrations are CONNECTED (disconnected integrations stop execution).
- *  2. Select those due now in their own timezone and weekday.
+ *  2. Select every schedule time due now in its own timezone and weekday.
  *  3. Add failed executions whose retry time has arrived.
- *  4. Execute with bounded concurrency inside a time budget. Anything not
- *     reached is picked up by the next tick — idempotency keys make that safe.
+ *  4. Execute with bounded concurrency across automations (each automation's
+ *     runs in order) inside a time budget. Anything not reached is picked up
+ *     by the next tick — idempotency keys make that safe.
  */
 export async function processDueAutomations(now: Date = new Date()): Promise<SchedulerSummary> {
   const cronRun = await prisma.cronRun.create({ data: { job: "standups", startedAt: now }, select: { id: true } });
@@ -50,7 +51,7 @@ export async function processDueAutomations(now: Date = new Date()): Promise<Sch
         user: { status: "ACTIVE", githubIntegration: { status: "CONNECTED" } },
         slackIntegration: { status: "CONNECTED" },
       },
-      select: { id: true, daysOfWeek: true, scheduleTime: true, timezone: true },
+      select: { id: true, daysOfWeek: true, scheduleTimes: true, timezone: true },
     });
 
     const { due, invalid } = selectDueAutomations(eligible, now);
@@ -62,51 +63,69 @@ export async function processDueAutomations(now: Date = new Date()): Promise<Sch
         status: "FAILED",
         nextRetryAt: { lte: now },
         attempt: { lt: MAX_ATTEMPTS },
+        // Rows from before multiple times per day have no slot and are not retried.
+        slot: { not: null },
         automation: {
           status: "ACTIVE",
           user: { status: "ACTIVE", githubIntegration: { status: "CONNECTED" } },
           slackIntegration: { status: "CONNECTED" },
         },
       },
-      select: { automationId: true, executionDate: true, scheduledFor: true },
+      select: { automationId: true, executionDate: true, slot: true, scheduledFor: true, trigger: true },
       take: 50,
     });
 
-    const seen = new Set(due.map((item) => `${item.automationId}:${item.executionDate}`));
-    const work: Array<DueItem & { retry: boolean }> = due.map((item) => ({ ...item, retry: false }));
+    // One work item per automation so its runs never execute concurrently.
+    const work = new Map<string, Array<DueItem["runs"][number] & { retry: boolean; trigger: "SCHEDULED" | "MANUAL" }>>();
+    const seen = new Set<string>();
+    for (const item of due) {
+      work.set(item.automationId, item.runs.map((run) => ({ ...run, retry: false, trigger: "SCHEDULED" as const })));
+      for (const run of item.runs) seen.add(`${item.automationId}:${run.executionDate}:${run.slot}`);
+    }
     for (const retry of retries) {
-      if (!retry.automationId) continue;
-      const key = `${retry.automationId}:${retry.executionDate}`;
+      if (!retry.automationId || !retry.slot) continue;
+      const key = `${retry.automationId}:${retry.executionDate}:${retry.slot}`;
       if (seen.has(key)) continue;
       seen.add(key);
-      work.push({
-        automationId: retry.automationId,
+      const runs = work.get(retry.automationId) ?? [];
+      runs.push({
         executionDate: retry.executionDate,
+        slot: retry.slot,
         scheduledFor: retry.scheduledFor ?? now,
         retry: true,
+        trigger: retry.trigger === "MANUAL" ? "MANUAL" : "SCHEDULED",
       });
+      work.set(retry.automationId, runs);
     }
 
+    const items = [...work.entries()].map(([automationId, runs]) => ({
+      automationId,
+      runs: runs.sort((a, b) => a.scheduledFor.getTime() - b.scheduledFor.getTime()),
+    }));
+
     const { deferred } = await runWithBudget(
-      work,
+      items,
       async (item) => {
-        summary.processed += 1;
-        if (item.retry) summary.retried += 1;
-        try {
-          const outcome = await runAutomation({
-            automationId: item.automationId,
-            executionDate: item.executionDate,
-            trigger: "SCHEDULED",
-            scheduledFor: item.scheduledFor,
-            actorUserId: null,
-          });
-          if (outcome.status === "SUCCESS") summary.succeeded += 1;
-          else if (outcome.status === "FAILED") summary.failed += 1;
-          else summary.skipped += 1;
-        } catch (error) {
-          // One automation's failure never aborts the batch.
-          summary.failed += 1;
-          log.error("automation run threw", { automationId: item.automationId, error: error as Error });
+        for (const run of item.runs) {
+          summary.processed += 1;
+          if (run.retry) summary.retried += 1;
+          try {
+            const outcome = await runAutomation({
+              automationId: item.automationId,
+              executionDate: run.executionDate,
+              slot: run.slot,
+              trigger: run.trigger,
+              scheduledFor: run.scheduledFor,
+              actorUserId: null,
+            });
+            if (outcome.status === "SUCCESS") summary.succeeded += 1;
+            else if (outcome.status === "FAILED") summary.failed += 1;
+            else summary.skipped += 1;
+          } catch (error) {
+            // One run's failure never aborts the batch.
+            summary.failed += 1;
+            log.error("automation run threw", { automationId: item.automationId, slot: run.slot, error: error as Error });
+          }
         }
       },
       { concurrency: CONCURRENCY, deadline: now.getTime() + TIME_BUDGET_MS },

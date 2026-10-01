@@ -1,6 +1,7 @@
 import "server-only";
 
 import { executeAutomation } from "@/lib/automation/engine";
+import { executionKey, isManualSlot, runCommitWindow, runInstantFor } from "@/lib/automation/schedule";
 import { evaluateTakeover } from "@/lib/automation/takeover";
 import type {
   AnchorClaim,
@@ -48,6 +49,8 @@ const rowSelect = {
   slackReplyTs: true,
   leaseExpiresAt: true,
   nextRetryAt: true,
+  windowStart: true,
+  windowEnd: true,
   updatedAt: true,
 } as const;
 
@@ -63,6 +66,8 @@ type RawRow = {
   slackReplyTs: string | null;
   leaseExpiresAt: Date | null;
   nextRetryAt: Date | null;
+  windowStart: Date | null;
+  windowEnd: Date | null;
   updatedAt: Date;
 };
 
@@ -78,6 +83,8 @@ function toRow(raw: RawRow): ExecutionRow {
     commitCount: raw.commitCount,
     slackParentTs: raw.slackParentTs,
     slackReplyTs: raw.slackReplyTs,
+    windowStart: raw.windowStart,
+    windowEnd: raw.windowEnd,
   };
 }
 
@@ -93,6 +100,9 @@ export const prismaExecutionStore: ExecutionStore = {
           userId: input.automation.userId,
           automationName: input.automation.name,
           executionDate: input.executionDate,
+          slot: input.slot,
+          windowStart: input.window.since,
+          windowEnd: input.window.until,
           idempotencyKey: input.idempotencyKey,
           trigger: input.trigger,
           status: "RUNNING",
@@ -223,13 +233,44 @@ function productionDeps(automation: AutomationSnapshot): EngineDeps {
   };
 }
 
+/** Statuses whose commit range counts as covered when the next post's range is computed. */
+const COVERING_STATUSES: RunStatus[] = ["SUCCESS", "SKIPPED", "RUNNING"];
+
 /**
- * Runs one automation for one local day with production dependencies and
- * records the outcome in the audit log.
+ * End of the latest earlier post that day (posted, empty, in progress, or
+ * failed but still going to retry). The next post starts there, so posts never
+ * repeat commits. A permanently failed post is ignored, so its commits are
+ * picked up by the next one.
+ */
+async function previousPostEnd(automationId: string, executionDate: string, end: Date, idempotencyKey: string) {
+  const previous = await prisma.execution.findFirst({
+    where: {
+      automationId,
+      executionDate,
+      idempotencyKey: { not: idempotencyKey },
+      windowEnd: { not: null, lte: end },
+      OR: [{ status: { in: COVERING_STATUSES } }, { status: "FAILED", nextRetryAt: { not: null } }],
+    },
+    orderBy: { windowEnd: "desc" },
+    select: { windowEnd: true },
+  });
+  return previous?.windowEnd ?? null;
+}
+
+/** Posts (any status) an automation has made for a local day — capped at MAX_RUNS_PER_DAY. */
+export async function countRunsForDay(automationId: string, executionDate: string): Promise<number> {
+  return prisma.execution.count({ where: { automationId, executionDate, slot: { not: null } } });
+}
+
+/**
+ * Runs one slot of one automation with production dependencies and records the
+ * outcome in the audit log.
  */
 export async function runAutomation(input: {
   automationId: string;
   executionDate: string;
+  /** "HH:MM" schedule time, or a "manual-…" id for Run now. */
+  slot: string;
   trigger: RunTrigger;
   scheduledFor?: Date | null;
   actorUserId: string | null;
@@ -238,9 +279,26 @@ export async function runAutomation(input: {
   if (!record) throw new AppError("INTERNAL", "automation not found for execution");
   const automation = toSnapshot(record);
 
+  const end = isManualSlot(input.slot)
+    ? new Date()
+    : (input.scheduledFor ?? runInstantFor(input.executionDate, input.slot, automation.timezone));
+  const key = executionKey(automation.id, input.executionDate, input.slot);
+  const window = runCommitWindow({
+    executionDate: input.executionDate,
+    timezone: automation.timezone,
+    mode: automation.commitWindow,
+    end,
+    previousEnd:
+      automation.commitWindow === "SAME_DAY"
+        ? await previousPostEnd(automation.id, input.executionDate, end, key)
+        : null,
+  });
+
   const outcome = await executeAutomation(productionDeps(automation), {
     automation,
     executionDate: input.executionDate,
+    slot: input.slot,
+    window,
     trigger: input.trigger,
     scheduledFor: input.scheduledFor ?? null,
   });
@@ -261,6 +319,7 @@ export async function runAutomation(input: {
       metadata: {
         executionId: outcome.executionId,
         executionDate: input.executionDate,
+        slot: input.slot,
         trigger: input.trigger,
         ...(outcome.status === "FAILED" ? { code: outcome.code, retryable: outcome.retryable } : {}),
       },
@@ -272,6 +331,7 @@ export async function runAutomation(input: {
   log[level]("automation run finished", {
     automationId: automation.id,
     executionDate: input.executionDate,
+    slot: input.slot,
     trigger: input.trigger,
     status: outcome.status,
     ...(outcome.status === "FAILED" ? { code: outcome.code } : {}),

@@ -7,8 +7,9 @@ work:
    commits *you* authored today in the repositories and branches you choose,
    has NVIDIA Nemotron (`nvidia/nemotron-3-super-120b-a12b`) turn them into
    concise standup bullets, and posts them to a Slack channel — as a reply under
-   one shared daily date-header thread — on your schedule, in your timezone.
-   Every run is idempotent: one update per automation per day, never duplicated.
+   one shared daily date-header thread — at up to 24 times a day, in your
+   timezone. Every run is idempotent: one post per scheduled time per day, never
+   duplicated, and each post covers only the commits since the previous one.
 2. **Commit activity schedules.** Pick a repository you can write to, configure
    a schedule, and GreenGrid performs a small, real repository maintenance
    update on the days you chose — one commit per run through GitHub's official
@@ -229,9 +230,13 @@ store parent ts, reply ts, permalink → SUCCESS, audit AUTOMATION_EXECUTED
 
 ### Duplicate protection
 
-- `Execution.idempotencyKey` is unique per automation per local date, so only
-  one row — and one owner — can exist for a day, whether triggered by the
-  scheduler or **Run now**.
+- `Execution.idempotencyKey` is `<automationId>:<date>:<slot>` and unique, so
+  each scheduled time posts at most once per day. **Run now** gets its own
+  `manual-<epochMs>` slot (except in "previous day" mode, which has a single
+  daily slot). An automation posts at most 24 times per local day.
+- Each execution stores the commit range it covers. A "same day" post starts
+  where the day's previous post ended (local midnight for the first), so several
+  posts a day never repeat commits, and a retry summarises exactly the same range.
 - AI output and the parent `ts` are saved as soon as they exist; a resumed run
   reuses them instead of generating a different message or a second parent.
 - Every Slack post carries message metadata with the execution key. Before
@@ -240,9 +245,9 @@ store parent ts, reply ts, permalink → SUCCESS, audit AUTOMATION_EXECUTED
 - `SlackThreadAnchor` is unique per (team, channel, date, header), so concurrent
   automations posting to one channel converge on a single daily parent.
 
-**Test Automation** is a dry run: it uses real GitHub data, a real Nemotron
-summary and a real Slack channel-access check, shows the exact message, and
-posts nothing. **Run now** posts for real and counts as that day's update.
+**Test Automation** uses real GitHub data and a real Nemotron summary, and posts
+the result to the channel as a labelled 🧪 test that never counts as an update.
+**Run now** posts a real update covering commits since the last post.
 
 ### Retry policy
 
@@ -681,7 +686,7 @@ No test performs a real GitHub, Slack, NVIDIA or database call.
 What the tests cannot prove is the live integration: end-to-end runs against
 real Google, GitHub, Slack and NVIDIA accounts need real credentials. Verify a
 deployment by signing in, connecting GitHub and Slack, creating an automation,
-using **Test Automation** (dry run), then **Run now**, and checking the
+using **Test Automation** (labelled test post), then **Run now**, and checking the
 execution detail page and the Slack thread.
 
 ## Security considerations

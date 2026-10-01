@@ -19,7 +19,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { requireUser } from "@/lib/auth";
-import { formatScheduleTime } from "@/lib/automation/schedule";
+import { describeScheduleTimes } from "@/lib/automation/schedule";
 import { formatDateTime } from "@/lib/format";
 import { AuthorizationError } from "@/lib/rbac";
 import { describeFrequency } from "@/lib/schedule/next-run";
@@ -65,7 +65,7 @@ export default async function AutomationDetailPage({ params }: { params: Promise
     ["Thread", labelFor(THREAD_MODE_OPTIONS, automation.threadMode)],
     [
       "Schedule",
-      `${describeFrequency(automation.daysOfWeek)} at ${formatScheduleTime(automation.scheduleTime)} (${timezoneLabel(automation.timezone)})`,
+      `${describeFrequency(automation.daysOfWeek)} at ${describeScheduleTimes(automation.scheduleTimes, 24)} (${timezoneLabel(automation.timezone)})`,
     ],
     ["Next run", automation.nextRunAt ? formatDateTime(automation.nextRunAt, automation.timezone) : "—"],
     ["Created", formatDateTime(automation.createdAt, automation.timezone)],

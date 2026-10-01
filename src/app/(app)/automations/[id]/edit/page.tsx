@@ -60,7 +60,7 @@ export default async function EditAutomationPage({ params }: { params: Promise<{
             threadMode: automation.threadMode,
             headerFormat: automation.headerFormat,
             daysOfWeek: automation.daysOfWeek,
-            scheduleTime: automation.scheduleTime,
+            scheduleTimes: automation.scheduleTimes,
             timezone: automation.timezone,
           }}
         />

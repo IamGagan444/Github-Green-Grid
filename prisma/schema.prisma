@@ -288,10 +288,11 @@ model Automation {
   threadMode   ThreadMode @default(DATE_HEADER)
   headerFormat String     @default("📅 {date}")
 
-  // Schedule. `scheduleTime` is "HH:MM" wall-clock time in `timezone`.
-  daysOfWeek   Weekday[]
-  scheduleTime String
-  timezone     String
+  // Schedule. `scheduleTimes` are sorted, unique "HH:MM" wall-clock times in
+  // `timezone` (1–24 per day). Each time posts at most once per day.
+  daysOfWeek    Weekday[]
+  scheduleTimes String[]
+  timezone      String
 
   lastExecutionAt DateTime?
   createdAt       DateTime  @default(now())
@@ -318,8 +319,15 @@ model Execution {
 
   // Local calendar day in the automation timezone, "YYYY-MM-DD".
   executionDate String
-  // "<automationId>:<executionDate>". Unique: one Slack update per automation per day.
+  // "HH:MM" for a scheduled time, "manual-<epochMs>" for Run now. Null on rows
+  // created before multiple times per day existed.
+  slot          String?
+  // "<automationId>:<executionDate>:<slot>". Unique: one Slack update per slot.
   idempotencyKey String          @unique
+  // Commits summarised by this execution, [windowStart, windowEnd). Fixed when
+  // the execution is created so a retry summarises exactly the same range.
+  windowStart    DateTime?
+  windowEnd      DateTime?
   trigger        RunTrigger      @default(SCHEDULED)
   status         RunStatus       @default(RUNNING)
   attempt        Int             @default(1)
@@ -365,6 +373,7 @@ model Execution {
   @@index([automationId])
   @@index([status])
   @@index([executionDate])
+  @@index([automationId, executionDate])
   @@index([createdAt])
   @@index([status, nextRetryAt])
   @@map("executions")

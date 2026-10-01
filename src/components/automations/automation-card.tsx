@@ -4,7 +4,7 @@ import { AlertTriangle, CalendarClock, GitBranch, Hash } from "lucide-react";
 import { AutomationActions } from "@/components/automations/automation-actions";
 import { AutomationStatusBadge, RunStatusBadge } from "@/components/status/status-badges";
 import { Card } from "@/components/ui/card";
-import { formatScheduleTime } from "@/lib/automation/schedule";
+import { describeScheduleTimes } from "@/lib/automation/schedule";
 import { formatDateTime } from "@/lib/format";
 import { describeFrequency } from "@/lib/schedule/next-run";
 import { timezoneLabel } from "@/lib/schedule/timezone";
@@ -42,7 +42,7 @@ export function AutomationCard({ automation }: { automation: AutomationSummary }
           <dt className="sr-only">Schedule</dt>
           <CalendarClock className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           <dd>
-            {describeFrequency(automation.daysOfWeek)} · {formatScheduleTime(automation.scheduleTime)}{" "}
+            {describeFrequency(automation.daysOfWeek)} · {describeScheduleTimes(automation.scheduleTimes)}{" "}
             <span className="text-muted-foreground">· {timezoneLabel(automation.timezone)}</span>
           </dd>
         </div>

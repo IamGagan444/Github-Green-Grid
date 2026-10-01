@@ -8,16 +8,16 @@ const WEEKDAYS = ["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"] as con
 
 describe("selectDueAutomations", () => {
   const automations = [
-    { id: "ist_5pm", daysOfWeek: WEEKDAYS, scheduleTime: "17:00", timezone: "Asia/Kolkata" },
-    { id: "ny_9am", daysOfWeek: WEEKDAYS, scheduleTime: "09:00", timezone: "America/New_York" },
-    { id: "weekend", daysOfWeek: ["SATURDAY", "SUNDAY"] as const, scheduleTime: "17:00", timezone: "Asia/Kolkata" },
+    { id: "ist_5pm", daysOfWeek: WEEKDAYS, scheduleTimes: ["17:00"], timezone: "Asia/Kolkata" },
+    { id: "ny_9am", daysOfWeek: WEEKDAYS, scheduleTimes: ["09:00"], timezone: "America/New_York" },
+    { id: "weekend", daysOfWeek: ["SATURDAY", "SUNDAY"] as const, scheduleTimes: ["17:00"], timezone: "Asia/Kolkata" },
   ];
 
   it("selects only automations due in their own timezone and weekday", () => {
     // Wednesday 11:35Z = 17:05 IST, 07:35 in New York.
     const { due } = selectDueAutomations(automations, new Date("2026-09-30T11:35:00Z"));
     expect(due.map((item) => item.automationId)).toEqual(["ist_5pm"]);
-    expect(due[0]?.executionDate).toBe("2026-09-30");
+    expect(due[0]?.runs.map((run) => run.executionDate)).toEqual(["2026-09-30"]);
   });
 
   it("picks up New York later the same UTC day", () => {
@@ -25,9 +25,17 @@ describe("selectDueAutomations", () => {
     expect(due.map((item) => item.automationId).sort()).toEqual(["ist_5pm", "ny_9am"]);
   });
 
+  it("groups several due times of one automation into one ordered item", () => {
+    const hourly = { id: "hourly", daysOfWeek: WEEKDAYS, scheduleTimes: ["16:00", "15:00", "17:00"], timezone: "Asia/Kolkata" };
+    // 17:05 IST: all three are due within the grace window.
+    const { due } = selectDueAutomations([hourly], new Date("2026-09-30T11:35:00Z"));
+    expect(due).toHaveLength(1);
+    expect(due[0]?.runs.map((run) => run.slot)).toEqual(["15:00", "16:00", "17:00"]);
+  });
+
   it("reports automations with an invalid timezone instead of throwing", () => {
     const { due, invalid } = selectDueAutomations(
-      [...automations, { id: "broken", daysOfWeek: WEEKDAYS, scheduleTime: "17:00", timezone: "Nowhere/Land" }],
+      [...automations, { id: "broken", daysOfWeek: WEEKDAYS, scheduleTimes: ["17:00"], timezone: "Nowhere/Land" }],
       new Date("2026-09-30T11:35:00Z"),
     );
     expect(invalid).toEqual(["broken"]);

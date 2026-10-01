@@ -46,6 +46,34 @@ export const scheduleTimeSchema = z
   .string()
   .regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use 24-hour HH:MM time.");
 
+export const MAX_SCHEDULE_TIMES = 24;
+
+/** 1–24 distinct times per day, stored sorted. */
+export const scheduleTimesSchema = z
+  .array(scheduleTimeSchema)
+  .min(1, "Add at least one time.")
+  .max(MAX_SCHEDULE_TIMES, `At most ${MAX_SCHEDULE_TIMES} times per day.`)
+  .refine((times) => new Set(times).size === times.length, "Each time can only be added once.")
+  .transform((times) => [...times].sort());
+
+/** "Previous day" posts a recap of yesterday, which only makes sense once a day. */
+export function scheduleTimesProblem(
+  commitWindow: "SAME_DAY" | "PREVIOUS_DAY",
+  scheduleTimes: readonly string[],
+): string | null {
+  return commitWindow === "PREVIOUS_DAY" && scheduleTimes.length > 1
+    ? "“Previous day” posts yesterday's recap, so it runs at one time per day."
+    : null;
+}
+
+function refineScheduleTimes(
+  value: { commitWindow?: "SAME_DAY" | "PREVIOUS_DAY"; scheduleTimes?: string[] },
+  context: z.RefinementCtx,
+) {
+  const problem = scheduleTimesProblem(value.commitWindow ?? "SAME_DAY", value.scheduleTimes ?? []);
+  if (problem) context.addIssue({ code: "custom", path: ["scheduleTimes"], message: problem });
+}
+
 export const automationNameSchema = z
   .string()
   .trim()
@@ -91,7 +119,7 @@ export const automationConfigSchema = z
     threadMode: threadModeSchema.default("DATE_HEADER"),
     headerFormat: headerFormatSchema.default("📅 {date}"),
     daysOfWeek: daysOfWeekSchema,
-    scheduleTime: scheduleTimeSchema,
+    scheduleTimes: scheduleTimesSchema,
     timezone: timezoneSchema,
   })
   .strict();
@@ -99,9 +127,12 @@ export const automationConfigSchema = z
 export type AutomationConfigInput = z.input<typeof automationConfigSchema>;
 export type AutomationConfig = z.output<typeof automationConfigSchema>;
 
-export const createAutomationSchema = automationConfigSchema.extend({
-  activate: z.boolean().default(true),
-});
+/** The wizard's schema: the config plus cross-field schedule rules. */
+export const automationFormSchema = automationConfigSchema.superRefine(refineScheduleTimes);
+
+export const createAutomationSchema = automationConfigSchema
+  .extend({ activate: z.boolean().default(true) })
+  .superRefine(refineScheduleTimes);
 
 export const updateAutomationSchema = automationConfigSchema.partial().refine(
   (value) => Object.keys(value).length > 0,

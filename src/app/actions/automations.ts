@@ -7,6 +7,7 @@ import { z } from "zod";
 import type { ActionState } from "@/lib/actions/action-state";
 import { formFields, runAction } from "@/lib/actions/run-action";
 import { authorize, enforceRateLimit } from "@/lib/api";
+import { MANUAL_SLOT_PREFIX, MAX_RUNS_PER_DAY } from "@/lib/automation/schedule";
 import { AppError } from "@/lib/errors";
 import { RATE_LIMITS } from "@/lib/rate-limit";
 import { AuthorizationError } from "@/lib/rbac";
@@ -17,7 +18,7 @@ import {
   setAutomationPaused,
   todayFor,
 } from "@/services/automation-service";
-import { runAutomation } from "@/services/execution-service";
+import { countRunsForDay, runAutomation } from "@/services/execution-service";
 
 const idSchema = z.object({ id: idParamSchema });
 const pauseSchema = z.object({ id: idParamSchema, action: z.enum(["pause", "resume"]) });
@@ -49,9 +50,9 @@ export async function deleteAutomationAction(_previous: ActionState, formData: F
 }
 
 /**
- * "Run now": executes today's update for real. It shares the day's
- * idempotency key with the scheduler, so today's update is posted at most once
- * no matter how the run is triggered.
+ * "Run now": posts an update for real, covering commits since the previous
+ * post today. Scheduled posts continue from where it ended, so nothing is
+ * repeated. Capped at MAX_RUNS_PER_DAY posts per automation per day.
  */
 export async function runAutomationNowAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
   let destination: string | null = null;
@@ -66,9 +67,24 @@ export async function runAutomationNowAction(_previous: ActionState, formData: F
     if (automation.userId !== user.userId) throw new AuthorizationError("NOT_FOUND");
     if (automation.status === "DISABLED") throw new AppError("AUTOMATION_NOT_ACTIVE");
 
+    const executionDate = todayFor(automation);
+    if ((await countRunsForDay(id, executionDate)) >= MAX_RUNS_PER_DAY) {
+      throw new AppError("DUPLICATE_EXECUTION", "daily run limit reached", {
+        userMessage: `This automation already posted ${MAX_RUNS_PER_DAY} times today. Try again tomorrow.`,
+      });
+    }
+
+    // "Same day": each Run now is its own post covering commits since the last
+    // one. "Previous day" recaps yesterday once, so it shares the day's slot.
+    const slot =
+      automation.commitWindow === "PREVIOUS_DAY"
+        ? (automation.scheduleTimes[0] ?? "00:00")
+        : `${MANUAL_SLOT_PREFIX}${Date.now()}`;
+
     const outcome = await runAutomation({
       automationId: id,
-      executionDate: todayFor(automation),
+      executionDate,
+      slot,
       trigger: "MANUAL",
       actorUserId: user.userId,
     });
