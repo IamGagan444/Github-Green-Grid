@@ -27,6 +27,9 @@ type Row = {
   slackParentTs: string | null;
   slackReplyTs: string | null;
   errorCode: string | null;
+  slot: string;
+  windowStart: Date | null;
+  windowEnd: Date | null;
 };
 
 /**
@@ -58,6 +61,9 @@ export class MemoryExecutionStore implements ExecutionStore {
         slackParentTs: null,
         slackReplyTs: null,
         errorCode: null,
+        slot: input.slot,
+        windowStart: input.window.since,
+        windowEnd: input.window.until,
       };
       this.rows.set(input.idempotencyKey, row);
       return { kind: "claimed", execution: this.view(row) };
@@ -99,6 +105,8 @@ export class MemoryExecutionStore implements ExecutionStore {
       commitCount: row.commitCount,
       slackParentTs: row.slackParentTs,
       slackReplyTs: row.slackReplyTs,
+      windowStart: row.windowStart,
+      windowEnd: row.windowEnd,
     };
   }
 }
@@ -213,6 +221,18 @@ export function automation(overrides: Partial<AutomationSnapshot> = {}): Automat
   };
 }
 
+/** The 17:00 IST slot on 2026-09-30, covering that day's commits up to 17:00. */
+export function slotRequest(slot = "17:00", window?: { since: Date; until: Date }) {
+  return {
+    slot,
+    window: {
+      dateKey: "2026-09-30",
+      since: window?.since ?? new Date("2026-09-29T18:30:00Z"),
+      until: window?.until ?? new Date("2026-09-30T11:30:00Z"),
+    },
+  };
+}
+
 export function buildDeps(options: {
   store?: MemoryExecutionStore;
   anchors?: MemoryAnchorStore;
@@ -225,14 +245,15 @@ export function buildDeps(options: {
   const anchors = options.anchors ?? new MemoryAnchorStore();
   const slack = options.slack ?? new FakeSlack();
   const commits = options.commits ?? [commit()];
-  const calls = { github: 0, ai: 0 };
+  const calls = { github: 0, ai: 0, windows: [] as Array<{ since: Date; until: Date }> };
 
   const deps: EngineDeps = {
     store,
     anchors,
     github: {
-      fetchCommits: async () => {
+      fetchCommits: async (_automation, window) => {
         calls.github += 1;
+        calls.windows.push({ since: window.since, until: window.until });
         return { commits, perSource: [{ fullName: "acme/api", branch: "main", commitCount: commits.length }] };
       },
     },

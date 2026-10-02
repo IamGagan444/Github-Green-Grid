@@ -1,7 +1,8 @@
 import { AppError, toAppError } from "@/lib/errors";
-import { executionKey, commitWindow, localMidnight } from "@/lib/automation/schedule";
+import { executionKey, localMidnight } from "@/lib/automation/schedule";
 import type {
   AutomationSnapshot,
+  CommitRange,
   EngineDeps,
   EngineOutcome,
   ExecutionRow,
@@ -22,9 +23,9 @@ import type { RunTrigger } from "@/generated/prisma/enums";
  *   claim(idempotency key) → GitHub commits → AI summary → Slack parent → Slack reply
  *
  * Duplicate protection, in layers:
- *  1. `Execution.idempotencyKey` = automationId:executionDate is UNIQUE. Only one
- *     row per automation per day can exist; `claim` hands it to exactly one
- *     worker (lease + optimistic takeover).
+ *  1. `Execution.idempotencyKey` = automationId:executionDate:slot is UNIQUE.
+ *     Only one row per automation per day per schedule time can exist; `claim`
+ *     hands it to exactly one worker (lease + optimistic takeover).
  *  2. A SUCCESS row is terminal: nothing re-posts it.
  *  3. Resumes reuse stored state: the AI output and parent ts are persisted as
  *     soon as they exist, so a retry never regenerates a different message or
@@ -33,7 +34,9 @@ import type { RunTrigger } from "@/generated/prisma/enums";
  *     posting on a resumed attempt, the thread is scanned for that key — a
  *     crash between "posted" and "saved" cannot produce a second message.
  *  5. `SlackThreadAnchor` is UNIQUE per (team, channel, day, header) so
- *     concurrent automations converge on one daily parent.
+ *     concurrent automations — and several posts a day — share one daily parent.
+ *  6. Each execution stores the commit range it covers, so a retry summarises
+ *     the same commits and consecutive posts in a day never overlap.
  */
 
 export const MAX_ATTEMPTS = 3;
@@ -46,6 +49,10 @@ const ANCHOR_WAIT_MS = 1_500;
 export interface ExecuteRequest {
   automation: AutomationSnapshot;
   executionDate: string;
+  /** "HH:MM" schedule time, or a "manual-…" id for Run now. */
+  slot: string;
+  /** Commits to summarise if this creates the execution; a resumed one keeps its stored range. */
+  window: CommitRange;
   trigger: RunTrigger;
   scheduledFor?: Date | null;
 }
@@ -57,17 +64,19 @@ export function retryDelayMs(attempt: number): number {
 }
 
 export async function executeAutomation(deps: EngineDeps, request: ExecuteRequest): Promise<EngineOutcome> {
-  const { automation, executionDate, trigger } = request;
+  const { automation, executionDate, slot, trigger } = request;
 
   if (trigger === "SCHEDULED" && automation.status !== "ACTIVE") {
     return { status: "SKIPPED", executionId: null, reason: "Automation is not active." };
   }
 
   const startedAt = deps.now();
-  const key = executionKey(automation.id, executionDate);
+  const key = executionKey(automation.id, executionDate, slot);
   const claim = await deps.store.claim({
     automation,
     executionDate,
+    slot,
+    window: request.window,
     idempotencyKey: key,
     trigger,
     scheduledFor: request.scheduledFor ?? null,
@@ -92,7 +101,7 @@ export async function executeAutomation(deps: EngineDeps, request: ExecuteReques
     // ── 1 + 2. Commits and AI summary (skipped when resuming with stored output)
     let summary = execution.aiOutput;
     if (!summary) {
-      const window = commitWindow(executionDate, automation.timezone, automation.commitWindow);
+      const window = storedWindow(execution, request.window.dateKey) ?? request.window;
       const { commits, perSource } = await deps.github.fetchCommits(automation, window);
 
       await deps.store.update(execution.id, {
@@ -215,6 +224,11 @@ export async function executeAutomation(deps: EngineDeps, request: ExecuteReques
       retryable,
     };
   }
+}
+
+function storedWindow(execution: ExecutionRow, dateKey: string): CommitRange | null {
+  if (!execution.windowStart || !execution.windowEnd) return null;
+  return { dateKey, since: execution.windowStart, until: execution.windowEnd };
 }
 
 async function finishSuccess(deps: EngineDeps, executionId: string, startedAt: Date): Promise<void> {

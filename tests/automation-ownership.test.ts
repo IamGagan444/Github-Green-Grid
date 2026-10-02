@@ -52,7 +52,7 @@ const ALICE_AUTOMATION = {
   threadMode: "DATE_HEADER",
   headerFormat: "📅 {date}",
   daysOfWeek: ["MONDAY"],
-  scheduleTime: "17:00",
+  scheduleTimes: ["17:00"],
   timezone: "Asia/Kolkata",
   lastExecutionAt: null,
   createdAt: new Date("2026-09-01"),

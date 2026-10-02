@@ -31,7 +31,7 @@ const MESSAGES: Record<string, Record<string, { type: "success" | "error"; text:
   notice: {
     automation_deleted: { type: "success", text: "Automation deleted. Execution history was kept." },
     run_success: { type: "success", text: "Today's update was posted to Slack." },
-    run_skipped: { type: "success", text: "No commits found for today, so nothing was posted." },
+    run_skipped: { type: "success", text: "No new commits since the last post, so nothing was posted." },
     run_failed: { type: "error", text: "The run failed. The details are below." },
   },
 };

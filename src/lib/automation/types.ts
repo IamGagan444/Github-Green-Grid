@@ -42,6 +42,16 @@ export interface ExecutionRow {
   commitCount: number | null;
   slackParentTs: string | null;
   slackReplyTs: string | null;
+  /** Commit range fixed at creation; null only on legacy rows. */
+  windowStart: Date | null;
+  windowEnd: Date | null;
+}
+
+export interface CommitRange {
+  /** Local day the range belongs to, for labels ("YYYY-MM-DD"). */
+  dateKey: string;
+  since: Date;
+  until: Date;
 }
 
 export interface ExecutionPatch {
@@ -78,6 +88,9 @@ export type ClaimResult =
 export interface ClaimInput {
   automation: Pick<AutomationSnapshot, "id" | "userId" | "name">;
   executionDate: string;
+  slot: string;
+  /** Stored on a newly created row; an existing row keeps its own range. */
+  window: CommitRange;
   idempotencyKey: string;
   trigger: RunTrigger;
   scheduledFor: Date | null;

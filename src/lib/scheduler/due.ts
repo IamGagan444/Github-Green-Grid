@@ -1,17 +1,19 @@
-import { getDueRun, type AutomationTiming, type DueRun } from "@/lib/automation/schedule";
+import { getDueRuns, type AutomationTiming, type DueRun } from "@/lib/automation/schedule";
 import { AppError } from "@/lib/errors";
 
 export interface SchedulableAutomation extends AutomationTiming {
   id: string;
 }
 
-export interface DueItem extends DueRun {
+/** All runs of one automation due now, oldest first. They must execute in order. */
+export interface DueItem {
   automationId: string;
+  runs: DueRun[];
 }
 
 /**
  * Pure selection of automations due at `now`. An automation with a corrupt
- * timezone is reported, not thrown, so it cannot stall the whole batch.
+ * timezone or time is reported, not thrown, so it cannot stall the whole batch.
  */
 export function selectDueAutomations(
   automations: readonly SchedulableAutomation[],
@@ -23,15 +25,16 @@ export function selectDueAutomations(
 
   for (const automation of automations) {
     try {
-      const run = getDueRun(automation, now, graceMinutes);
-      if (run) due.push({ automationId: automation.id, ...run });
+      const runs = getDueRuns(automation, now, graceMinutes);
+      if (runs.length > 0) due.push({ automationId: automation.id, runs });
     } catch (error) {
       if (error instanceof AppError && error.code === "TIMEZONE_INVALID") invalid.push(automation.id);
       else throw error;
     }
   }
 
-  due.sort((a, b) => a.scheduledFor.getTime() - b.scheduledFor.getTime());
+  // Most overdue automations first.
+  due.sort((a, b) => (a.runs[0]?.scheduledFor.getTime() ?? 0) - (b.runs[0]?.scheduledFor.getTime() ?? 0));
   return { due, invalid };
 }
 

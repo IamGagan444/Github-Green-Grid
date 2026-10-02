@@ -1,6 +1,8 @@
 import "server-only";
 
-import { commitWindow, getNextRun, localDayKey } from "@/lib/automation/schedule";
+import { ZodError } from "zod";
+
+import { commitWindow, getNextRun, localDayKey, normaliseScheduleTimes } from "@/lib/automation/schedule";
 import type { AutomationSnapshot } from "@/lib/automation/types";
 import { prisma } from "@/lib/db";
 import { AppError } from "@/lib/errors";
@@ -11,6 +13,7 @@ import type { Automation, Prisma } from "@/generated/prisma/client";
 import type { AutomationStatus } from "@/generated/prisma/enums";
 import {
   parseStoredSources,
+  scheduleTimesProblem,
   type AutomationConfig,
   type GitHubSource,
   type PreviewAutomationInput,
@@ -64,7 +67,7 @@ export interface AutomationSummary {
   threadMode: AutomationConfig["threadMode"];
   headerFormat: string;
   daysOfWeek: AutomationConfig["daysOfWeek"];
-  scheduleTime: string;
+  scheduleTimes: string[];
   timezone: string;
   createdAt: Date;
   updatedAt: Date;
@@ -86,7 +89,7 @@ const summaryInclude = {
   executions: {
     orderBy: { startedAt: "desc" as const },
     take: 1,
-    select: { id: true, status: true, executionDate: true, startedAt: true, errorMessage: true },
+    select: { id: true, status: true, executionDate: true, slot: true, startedAt: true, errorMessage: true },
   },
 } satisfies Prisma.AutomationInclude;
 
@@ -100,10 +103,18 @@ function toSummary(record: AutomationWithRelations): AutomationSummary {
   else if (record.slackIntegration.status !== "CONNECTED") blockers.push("Slack is not connected.");
   if (record.status === "DISABLED") blockers.push(record.disabledReason ?? "Disabled by an administrator.");
 
-  const next =
-    record.status === "ACTIVE" && blockers.length === 0
-      ? getNextRun({ daysOfWeek: record.daysOfWeek, scheduleTime: record.scheduleTime, timezone: record.timezone })
-      : null;
+  const timing = { daysOfWeek: record.daysOfWeek, scheduleTimes: record.scheduleTimes, timezone: record.timezone };
+  let next = record.status === "ACTIVE" && blockers.length === 0 ? getNextRun(timing) : null;
+  // A slot already posted early (Run now in "previous day" mode) will not post again.
+  const last = record.executions[0];
+  if (
+    next &&
+    last?.executionDate === next.executionDate &&
+    last.slot === next.slot &&
+    (last.status === "SUCCESS" || last.status === "SKIPPED")
+  ) {
+    next = getNextRun(timing, new Date(next.scheduledFor.getTime() + 1));
+  }
 
   return {
     id: record.id,
@@ -124,7 +135,7 @@ function toSummary(record: AutomationWithRelations): AutomationSummary {
     threadMode: record.threadMode,
     headerFormat: record.headerFormat,
     daysOfWeek: record.daysOfWeek,
-    scheduleTime: record.scheduleTime,
+    scheduleTimes: record.scheduleTimes,
     timezone: record.timezone,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
@@ -215,7 +226,7 @@ function toData(config: AutomationConfig, channelName: string) {
     threadMode: config.threadMode,
     headerFormat: config.headerFormat,
     daysOfWeek: config.daysOfWeek,
-    scheduleTime: config.scheduleTime,
+    scheduleTimes: normaliseScheduleTimes(config.scheduleTimes),
     timezone: config.timezone,
   };
 }
@@ -264,9 +275,14 @@ export async function updateAutomation(actor: Actor, automationId: string, patch
     threadMode: patch.threadMode ?? record.threadMode,
     headerFormat: patch.headerFormat ?? record.headerFormat,
     daysOfWeek: patch.daysOfWeek ?? record.daysOfWeek,
-    scheduleTime: patch.scheduleTime ?? record.scheduleTime,
+    scheduleTimes: patch.scheduleTimes ?? record.scheduleTimes,
     timezone: patch.timezone ?? record.timezone,
   };
+
+  const scheduleProblem = scheduleTimesProblem(merged.commitWindow, merged.scheduleTimes);
+  if (scheduleProblem) {
+    throw new ZodError([{ code: "custom", path: ["scheduleTimes"], message: scheduleProblem, input: merged.scheduleTimes }]);
+  }
 
   if (patch.githubSources) await verifySources(actor.userId, merged.githubSources);
 

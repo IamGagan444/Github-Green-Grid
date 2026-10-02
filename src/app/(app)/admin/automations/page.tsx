@@ -9,7 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Pagination } from "@/components/ui/pagination";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { requireAdmin } from "@/lib/auth";
-import { formatScheduleTime } from "@/lib/automation/schedule";
+import { describeScheduleTimes } from "@/lib/automation/schedule";
 import { formatDateTime } from "@/lib/format";
 import { describeFrequency } from "@/lib/schedule/next-run";
 import { timezoneLabel } from "@/lib/schedule/timezone";
@@ -89,7 +89,7 @@ export default async function AdminAutomationsPage({ searchParams }: { searchPar
                     <AutomationStatusBadge status={automation.status} />
                   </TableCell>
                   <TableCell className="whitespace-nowrap text-xs">
-                    {describeFrequency(automation.daysOfWeek)} · {formatScheduleTime(automation.scheduleTime)}
+                    {describeFrequency(automation.daysOfWeek)} · {describeScheduleTimes(automation.scheduleTimes)}
                     <br />
                     <span className="text-muted-foreground">{timezoneLabel(automation.timezone)}</span>
                   </TableCell>

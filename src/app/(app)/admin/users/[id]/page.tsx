@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { requireAdmin } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { formatDate, formatDateTime } from "@/lib/format";
+import { describeScheduleTimes } from "@/lib/automation/schedule";
 import { AuthorizationError } from "@/lib/rbac";
 import { timezoneLabel } from "@/lib/schedule/timezone";
 import { idParamSchema } from "@/validators/automation";
@@ -37,7 +38,7 @@ export default async function AdminUserDetailPage({ params }: { params: Promise<
     prisma.automation.findMany({
       where: { userId: user.id },
       orderBy: { createdAt: "desc" },
-      select: { id: true, name: true, status: true, slackChannelName: true, scheduleTime: true, timezone: true, lastExecutionAt: true },
+      select: { id: true, name: true, status: true, slackChannelName: true, scheduleTimes: true, timezone: true, lastExecutionAt: true },
     }),
     listExecutions({ userId: user.id, page: 1, pageSize: 15 }),
   ]);
@@ -122,7 +123,7 @@ export default async function AdminUserDetailPage({ params }: { params: Promise<
                     </TableCell>
                     <TableCell>#{automation.slackChannelName}</TableCell>
                     <TableCell className="whitespace-nowrap">
-                      {automation.scheduleTime} {timezoneLabel(automation.timezone)}
+                      {describeScheduleTimes(automation.scheduleTimes)} {timezoneLabel(automation.timezone)}
                     </TableCell>
                     <TableCell className="whitespace-nowrap">
                       {automation.lastExecutionAt ? formatDateTime(automation.lastExecutionAt) : "Never"}

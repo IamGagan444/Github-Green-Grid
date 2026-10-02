@@ -46,7 +46,7 @@ export default async function NewAutomationPage() {
             threadMode: "DATE_HEADER",
             headerFormat: "📅 {date}",
             daysOfWeek: defaults.defaultDaysOfWeek,
-            scheduleTime: defaults.defaultScheduleTime,
+            scheduleTimes: [defaults.defaultScheduleTime],
             timezone: defaults.defaultTimezone,
           }}
         />
