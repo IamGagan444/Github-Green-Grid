@@ -145,6 +145,41 @@ export function getSlackConfig(): SlackConfig {
   };
 }
 
+export interface InstagramConfig {
+  appId: string;
+  appSecret: string;
+  /** Echoed back by Meta's webhook verification handshake. */
+  webhookVerifyToken: string | null;
+  graphVersion: string;
+  scopes: string[];
+}
+
+const INSTAGRAM_SCOPES = [
+  "instagram_business_basic",
+  "instagram_business_manage_comments",
+  "instagram_business_manage_messages",
+];
+
+export function getInstagramConfig(): InstagramConfig {
+  const appId = process.env.INSTAGRAM_APP_ID?.trim();
+  const appSecret = process.env.INSTAGRAM_APP_SECRET?.trim();
+  const missing = [
+    ...(appId ? [] : ["INSTAGRAM_APP_ID"]),
+    ...(appSecret ? [] : ["INSTAGRAM_APP_SECRET"]),
+  ];
+  if (missing.length > 0 || !appId || !appSecret) {
+    throw new ConfigurationError("Instagram", missing);
+  }
+
+  return {
+    appId,
+    appSecret,
+    webhookVerifyToken: process.env.INSTAGRAM_WEBHOOK_VERIFY_TOKEN?.trim() || null,
+    graphVersion: process.env.INSTAGRAM_GRAPH_VERSION?.trim() || "v25.0",
+    scopes: INSTAGRAM_SCOPES,
+  };
+}
+
 export interface AiConfig {
   apiKey: string;
   baseUrl: string;
@@ -176,6 +211,8 @@ export function getConfigurationStatus(): Record<string, boolean> {
     slackOAuth: has("SLACK_CLIENT_ID") && has("SLACK_CLIENT_SECRET"),
     slackSigningSecret: has("SLACK_SIGNING_SECRET"),
     slackUserPosting: process.env.SLACK_USER_SCOPES?.trim().toLowerCase() !== "none",
+    instagramApp: has("INSTAGRAM_APP_ID") && has("INSTAGRAM_APP_SECRET"),
+    instagramWebhook: has("INSTAGRAM_WEBHOOK_VERIFY_TOKEN"),
     nvidiaApi: has("NVIDIA_API_KEY"),
     cronSecret: has("CRON_SECRET"),
     encryptionKey: has("ENCRYPTION_KEY") || has("GITHUB_TOKEN_ENCRYPTION_KEY"),

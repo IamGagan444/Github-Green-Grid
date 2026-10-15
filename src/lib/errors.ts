@@ -30,6 +30,13 @@ export type AppErrorCode =
   | "SLACK_RATE_LIMITED"
   | "SLACK_UNAVAILABLE"
   | "SLACK_USER_POSTING_UNAVAILABLE"
+  | "INSTAGRAM_OAUTH_FAILED"
+  | "INSTAGRAM_NOT_CONNECTED"
+  | "INSTAGRAM_TOKEN_REVOKED"
+  | "INSTAGRAM_PERMISSION_DENIED"
+  | "INSTAGRAM_RATE_LIMITED"
+  | "INSTAGRAM_UNAVAILABLE"
+  | "INSTAGRAM_REQUEST_REJECTED"
   | "AI_PROVIDER_FAILED"
   | "AI_INVALID_OUTPUT"
   | "AI_NOT_CONFIGURED"
@@ -124,6 +131,41 @@ const SPEC: Record<AppErrorCode, CodeSpec> = {
     message: "\"Post as me\" needs Slack user permissions. Reconnect Slack and approve posting as yourself, or switch to bot posting.",
     retryable: false,
     httpStatus: 409,
+  },
+  INSTAGRAM_OAUTH_FAILED: {
+    message: "Instagram could not complete the connection. Please try again.",
+    retryable: false,
+    httpStatus: 502,
+  },
+  INSTAGRAM_NOT_CONNECTED: {
+    message: "Connect an Instagram professional account in Settings first.",
+    retryable: false,
+    httpStatus: 409,
+  },
+  INSTAGRAM_TOKEN_REVOKED: {
+    message: "Your Instagram connection expired or was revoked. Reconnect Instagram in Settings.",
+    retryable: false,
+    httpStatus: 409,
+  },
+  INSTAGRAM_PERMISSION_DENIED: {
+    message: "Instagram denied the request. Reconnect Instagram and approve all requested permissions.",
+    retryable: false,
+    httpStatus: 403,
+  },
+  INSTAGRAM_RATE_LIMITED: {
+    message: "Instagram rate limit reached. Messages will be retried automatically.",
+    retryable: true,
+    httpStatus: 503,
+  },
+  INSTAGRAM_UNAVAILABLE: {
+    message: "Instagram is temporarily unavailable. Messages will be retried automatically.",
+    retryable: true,
+    httpStatus: 503,
+  },
+  INSTAGRAM_REQUEST_REJECTED: {
+    message: "Instagram rejected the message (for example, the reply window has closed or the user blocked messages).",
+    retryable: false,
+    httpStatus: 422,
   },
   AI_PROVIDER_FAILED: {
     message: "The AI summary service is unavailable. The run will be retried automatically.",

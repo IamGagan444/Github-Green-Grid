@@ -2,9 +2,15 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import { KeyRound, Plus, ShieldCheck, Trash2, Unplug } from "lucide-react";
 
-import { deleteAccountAction, disconnectGitHubAction, disconnectSlackAction } from "@/app/actions/account";
+import {
+  deleteAccountAction,
+  disconnectGitHubAction,
+  disconnectInstagramAction,
+  disconnectSlackAction,
+} from "@/app/actions/account";
 import { GithubIcon } from "@/components/icons/github-icon";
 import { GoogleIcon } from "@/components/icons/google-icon";
+import { InstagramIcon } from "@/components/icons/instagram-icon";
 import { SlackIcon } from "@/components/icons/slack-icon";
 import { Header } from "@/components/layout/header";
 import { ConfirmAction } from "@/components/settings/confirm-action";
@@ -19,6 +25,7 @@ import { formatDate, formatDateTime } from "@/lib/format";
 import { listSupportedTimezones } from "@/lib/schedule/timezone";
 import { listAuditLogs } from "@/services/audit-service";
 import { getGitHubIntegration } from "@/services/github-service";
+import { isInstagramConfigured, listInstagramIntegrations } from "@/services/instagram-service";
 import { isSlackConfigured, isUserPostingOffered, listSlackIntegrations } from "@/services/slack-service";
 
 export const metadata: Metadata = { title: "Settings" };
@@ -38,6 +45,13 @@ const AUDIT_LABELS: Record<string, string> = {
   GITHUB_DISCONNECTED: "Disconnected GitHub",
   SLACK_CONNECTED: "Connected Slack",
   SLACK_DISCONNECTED: "Disconnected Slack",
+  INSTAGRAM_CONNECTED: "Connected Instagram",
+  INSTAGRAM_DISCONNECTED: "Disconnected Instagram",
+  INSTAGRAM_AUTOMATION_CREATED: "Created an Instagram automation",
+  INSTAGRAM_AUTOMATION_UPDATED: "Updated an Instagram automation",
+  INSTAGRAM_AUTOMATION_PAUSED: "Paused an Instagram automation",
+  INSTAGRAM_AUTOMATION_RESUMED: "Resumed an Instagram automation",
+  INSTAGRAM_AUTOMATION_DELETED: "Deleted an Instagram automation",
   AUTOMATION_CREATED: "Created an automation",
   AUTOMATION_UPDATED: "Updated an automation",
   AUTOMATION_PAUSED: "Paused an automation",
@@ -51,7 +65,7 @@ const AUDIT_LABELS: Record<string, string> = {
 export default async function SettingsPage() {
   const user = await requireUser("settings:manage:own");
 
-  const [preferences, github, slack, audit] = await Promise.all([
+  const [preferences, github, slack, instagram, audit] = await Promise.all([
     prisma.user.findUniqueOrThrow({
       where: { id: user.userId },
       select: {
@@ -66,10 +80,12 @@ export default async function SettingsPage() {
     }),
     getGitHubIntegration(user.userId),
     listSlackIntegrations(user.userId),
+    listInstagramIntegrations(user.userId),
     listAuditLogs({ actorUserId: user.userId, page: 1, pageSize: 10 }),
   ]);
 
   const slackConfigured = isSlackConfigured();
+  const instagramConfigured = isInstagramConfigured();
   const userPostingOffered = isUserPostingOffered();
   const githubAppSlug = process.env.GITHUB_APP_SLUG?.trim();
 
@@ -230,6 +246,63 @@ export default async function SettingsPage() {
                   ) : null
                 }
               />
+
+              {instagram.map((account) => (
+                <IntegrationRow
+                  key={account.id}
+                  icon={<InstagramIcon className="size-5" />}
+                  name={`Instagram · @${account.username}`}
+                  detail={
+                    account.status === "CONNECTED" && !account.webhookSubscribed
+                      ? "Connected, but Instagram did not confirm the webhook subscription. Reconnect to retry."
+                      : `Comment and DM automations · connected ${formatDate(account.connectedAt)}`
+                  }
+                  badge={<IntegrationBadge status={account.status} />}
+                  actions={
+                    <div className="flex flex-wrap gap-2">
+                      {account.status !== "CONNECTED" || !account.webhookSubscribed ? (
+                        <Button asChild variant="outline" size="sm">
+                          <a href="/api/integrations/instagram/connect?returnTo=/settings">Reconnect</a>
+                        </Button>
+                      ) : null}
+                      {account.status === "CONNECTED" ? (
+                        <ConfirmAction
+                          action={disconnectInstagramAction}
+                          fields={{ id: account.id }}
+                          triggerLabel="Disconnect"
+                          triggerIcon={<Unplug aria-hidden="true" />}
+                          title={`Disconnect @${account.username}?`}
+                          description="GreenGrid stops receiving comments and messages for this account and deletes its stored token. Automations keep their configuration and stop replying until you reconnect."
+                          confirmLabel="Disconnect Instagram"
+                        />
+                      ) : null}
+                    </div>
+                  }
+                />
+              ))}
+
+              <IntegrationRow
+                icon={<InstagramIcon className="size-5" />}
+                name={instagram.length > 0 ? "Add another Instagram account" : "Instagram"}
+                detail={
+                  instagramConfigured
+                    ? "Auto-DM links to people who comment or message a keyword. Needs a Business or Creator account."
+                    : "Instagram is not configured on this server. Ask an administrator."
+                }
+                badge={instagram.length === 0 ? <IntegrationBadge status="NOT_CONNECTED" /> : null}
+                actions={
+                  instagramConfigured ? (
+                    <div className="flex flex-wrap gap-2">
+                      <Button asChild size="sm" variant={instagram.length > 0 ? "outline" : "default"}>
+                        <a href="/api/integrations/instagram/connect?returnTo=/settings">
+                          <Plus aria-hidden="true" />
+                          Connect Instagram
+                        </a>
+                      </Button>
+                    </div>
+                  ) : null
+                }
+              />
             </CardContent>
           </Card>
 
@@ -291,7 +364,7 @@ export default async function SettingsPage() {
             </CardHeader>
             <CardContent className="flex flex-col gap-4 pt-0 sm:flex-row sm:items-center sm:justify-between">
               <p className="max-w-xl text-sm text-muted-foreground">
-                Deleting your account revokes GreenGrid&apos;s GitHub and Slack access and permanently deletes your
+                Deleting your account revokes GreenGrid&apos;s GitHub, Slack and Instagram access and permanently deletes your
                 automations, schedules and history. Messages already posted to Slack and commits already pushed to
                 GitHub are not affected.
               </p>
