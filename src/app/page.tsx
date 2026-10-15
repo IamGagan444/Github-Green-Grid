@@ -1,8 +1,20 @@
 import Link from "next/link";
-import { Bot, CalendarClock, History, MessageSquareText, ShieldCheck } from "lucide-react";
+import {
+  ArrowRight,
+  Bot,
+  CalendarClock,
+  History,
+  KeyRound,
+  LayoutDashboard,
+  MessageCircle,
+  ShieldCheck,
+} from "lucide-react";
+import type { ReactNode } from "react";
 
 import { GithubIcon } from "@/components/icons/github-icon";
 import { GoogleIcon } from "@/components/icons/google-icon";
+import { InstagramIcon } from "@/components/icons/instagram-icon";
+import { SlackIcon } from "@/components/icons/slack-icon";
 
 import { ContributionCalendar } from "@/components/dashboard/contribution-calendar";
 import { ContributionDisclaimer } from "@/components/dashboard/contribution-disclaimer";
@@ -14,129 +26,200 @@ import { getCurrentUser } from "@/lib/auth/session";
 
 export const dynamic = "force-dynamic";
 
-const FEATURES = [
+interface Product {
+  id: string;
+  icon: ReactNode;
+  title: string;
+  tagline: string;
+  flow: Array<{ icon: ReactNode; label: string }>;
+  points: string[];
+}
+
+const PRODUCTS: Product[] = [
   {
-    icon: GithubIcon,
-    title: "GitHub-connected",
-    description: "Connect your GitHub account securely.",
+    id: "standups",
+    icon: <Bot className="size-5 text-primary" aria-hidden="true" />,
+    title: "Standup updates",
+    tagline: "Your commits, turned into a daily standup in Slack.",
+    flow: [
+      { icon: <GithubIcon className="size-4" />, label: "Commits" },
+      { icon: <Bot className="size-4" aria-hidden="true" />, label: "AI summary" },
+      { icon: <SlackIcon className="size-4" />, label: "Slack thread" },
+    ],
+    points: [
+      "Written only from your real commits",
+      "Your schedule and timezone, posted once per slot",
+      "Post as the app or as yourself",
+    ],
   },
   {
-    icon: CalendarClock,
-    title: "Scheduled activity",
-    description: "Choose when GreenGrid should perform repository maintenance.",
+    id: "instagram",
+    icon: <MessageCircle className="size-5 text-primary" aria-hidden="true" />,
+    title: "Instagram auto-DM",
+    tagline: "Someone comments “LINK” on your reel and gets the link in their DMs.",
+    flow: [
+      { icon: <InstagramIcon className="size-4" />, label: "Comment" },
+      { icon: <MessageCircle className="size-4" aria-hidden="true" />, label: "Keyword match" },
+      { icon: <InstagramIcon className="size-4" />, label: "DM + reply" },
+    ],
+    points: [
+      "Comment, DM keyword, story reply and mention triggers",
+      "Optional follow-gate before the link is sent",
+      "Counts triggers, DMs sent and link clicks",
+    ],
   },
   {
-    icon: Bot,
-    title: "AI standup updates",
-    description: "Your day's commits, summarised by NVIDIA Nemotron into concise standup bullets.",
-  },
-  {
-    icon: MessageSquareText,
-    title: "Posted to Slack",
-    description: "One dated thread per day in the channel you choose — never duplicated.",
-  },
-  {
-    icon: History,
-    title: "Activity history",
-    description: "See every scheduled execution and its result.",
-  },
-  {
-    icon: ShieldCheck,
-    title: "Privacy-first",
-    description: "GitHub and Slack credentials are encrypted and stay server-side.",
+    id: "commits",
+    icon: <CalendarClock className="size-5 text-primary" aria-hidden="true" />,
+    title: "Commit activity",
+    tagline: "Lightweight, scheduled repository maintenance through GitHub's API.",
+    flow: [
+      { icon: <CalendarClock className="size-4" aria-hidden="true" />, label: "Schedule" },
+      { icon: <GithubIcon className="size-4" />, label: "Repository" },
+      { icon: <History className="size-4" aria-hidden="true" />, label: "History" },
+    ],
+    points: [
+      "Pick repositories, days and how often",
+      "Runs in your own timezone",
+      "Full history of every scheduled run",
+    ],
   },
 ];
 
 const STEPS = [
-  { title: "Sign in with Google", description: "Your account, with role-based access control." },
-  { title: "Connect GitHub and Slack", description: "Least-privilege OAuth; tokens are encrypted at rest." },
-  { title: "Create an automation", description: "Repositories, branch, message style, channel and thread style." },
-  { title: "Pick a schedule", description: "Days, time and timezone — for example weekdays at 5:00 PM IST." },
-  { title: "Nemotron writes the update", description: "Only from your real commits. Invalid output is never posted." },
-  { title: "Posted once, in today's thread", description: "Idempotent per day, with full execution history." },
+  { title: "Sign in with Google", description: "One account for everything. No passwords to manage." },
+  { title: "Connect only what you need", description: "GitHub, Slack or Instagram, each with least-privilege access." },
+  { title: "Create an automation", description: "A short form per automation type, with a live preview." },
+  { title: "Watch it run", description: "One dashboard shows every run, DM and failure as it happens." },
+];
+
+const TRUST = [
+  {
+    icon: KeyRound,
+    title: "Encrypted credentials",
+    description: "Every token is encrypted with AES-256-GCM and never reaches your browser.",
+  },
+  {
+    icon: ShieldCheck,
+    title: "Official APIs only",
+    description: "GitHub, Slack and Meta's official APIs. No scraping, no passwords.",
+  },
+  {
+    icon: LayoutDashboard,
+    title: "One dashboard",
+    description: "Every automation, run and connected account in one place.",
+  },
 ];
 
 export default async function LandingPage() {
   const user = await getCurrentUser();
   const demo = buildDemoCalendar();
+  const cta = (
+    <Button asChild size="lg">
+      <Link href={user ? "/dashboard" : "/login"}>
+        {user ? null : <GoogleIcon className="size-4" />}
+        {user ? "Open dashboard" : "Get started with Google"}
+      </Link>
+    </Button>
+  );
 
   return (
     <MarketingShell isAuthenticated={user !== null}>
       <section className="border-b border-border">
-        <div className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6 sm:py-20">
-          <div className="max-w-2xl">
-            <h1 className="text-3xl font-semibold tracking-tight text-balance sm:text-4xl">
-              Your commits, turned into daily standups.
+        <div className="mx-auto w-full max-w-6xl px-4 py-16 sm:px-6 sm:py-24">
+          <div className="max-w-3xl">
+            <p className="inline-flex items-center gap-2 rounded-full border border-border px-3 py-1 text-xs text-muted-foreground">
+              <GithubIcon className="size-3.5" />
+              <SlackIcon className="size-3.5" />
+              <InstagramIcon className="size-3.5" />
+              Standups · Instagram auto-DM · Commit activity
+            </p>
+            <h1 className="mt-5 text-3xl font-semibold tracking-tight text-balance sm:text-5xl">
+              Automate the busywork around your code and your content.
             </h1>
-            <p className="mt-4 text-base text-muted-foreground text-pretty">
-              GreenGrid reads the commits you made today, writes a concise standup with AI, and posts
-              it to your team&apos;s Slack thread on your schedule. It can also automate lightweight
-              repository maintenance through GitHub&apos;s official APIs.
+            <p className="mt-5 max-w-2xl text-base text-muted-foreground text-pretty sm:text-lg">
+              GreenGrid posts your daily standup to Slack from your commits, DMs a link to everyone who
+              comments a keyword on your reels, and keeps your repositories active on schedule. You
+              set each one up once and follow them all from a single dashboard.
             </p>
 
-            <div className="mt-7 flex flex-wrap gap-3">
-              <Button asChild size="lg">
-                <Link href={user ? "/dashboard" : "/login"}>
-                  {user ? null : <GoogleIcon className="size-4" />}
-                  {user ? "Open dashboard" : "Continue with Google"}
-                </Link>
-              </Button>
+            <div className="mt-8 flex flex-wrap gap-3">
+              {cta}
               <Button asChild size="lg" variant="outline">
-                <Link href="#how-it-works">See how it works</Link>
+                <Link href="#automations">
+                  Explore automations
+                  <ArrowRight aria-hidden="true" />
+                </Link>
               </Button>
             </div>
           </div>
-
-          <Card className="mt-12 p-5">
-            <div className="mb-4 flex items-baseline justify-between gap-3">
-              <h2 className="text-sm font-medium">Activity over the last year</h2>
-              <span className="text-xs text-muted-foreground">Example data</span>
-            </div>
-            <ContributionCalendar
-              startDate={demo.startDate}
-              endDate={demo.endDate}
-              activities={demo.days}
-            />
-          </Card>
         </div>
       </section>
 
-      <section aria-labelledby="features-heading" className="border-b border-border">
+      <section id="automations" aria-labelledby="automations-heading" className="scroll-mt-16 border-b border-border">
         <div className="mx-auto w-full max-w-6xl px-4 py-14 sm:px-6">
-          <h2 id="features-heading" className="text-lg font-semibold tracking-tight">
-            Everything you need to run it safely
+          <h2 id="automations-heading" className="text-2xl font-semibold tracking-tight">
+            Three automations, one place
           </h2>
+          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+            Use one or all of them. Each connects only the account it needs.
+          </p>
 
-          <ul className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {FEATURES.map((feature) => {
-              const Icon = feature.icon;
-              return (
-                <li key={feature.title}>
-                  <Card className="h-full p-5 transition-colors hover:border-border/80 hover:bg-card/80">
-                    <Icon className="size-4 text-primary" aria-hidden="true" />
-                    <h3 className="mt-3 text-sm font-medium">{feature.title}</h3>
-                    <p className="mt-1.5 text-sm text-muted-foreground">{feature.description}</p>
-                  </Card>
-                </li>
-              );
-            })}
+          <ul className="mt-8 grid gap-4 lg:grid-cols-3">
+            {PRODUCTS.map((product) => (
+              <li key={product.id}>
+                <Card className="flex h-full flex-col p-6">
+                  <span className="flex size-10 items-center justify-center rounded-lg border border-border bg-secondary/40">
+                    {product.icon}
+                  </span>
+                  <h3 className="mt-4 text-base font-semibold">{product.title}</h3>
+                  <p className="mt-1.5 text-sm text-muted-foreground">{product.tagline}</p>
+
+                  <ol
+                    aria-label={`${product.title} flow`}
+                    className="mt-5 flex items-center gap-1.5 rounded-lg bg-secondary/40 p-2 text-xs"
+                  >
+                    {product.flow.map((step, index) => (
+                      <li key={step.label} className="flex min-w-0 flex-1 items-center gap-1.5">
+                        <span className="flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md bg-background px-2 py-1.5">
+                          {step.icon}
+                          <span className="truncate">{step.label}</span>
+                        </span>
+                        {index < product.flow.length - 1 ? (
+                          <ArrowRight className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
+                        ) : null}
+                      </li>
+                    ))}
+                  </ol>
+
+                  <ul className="mt-5 flex flex-col gap-2 text-sm">
+                    {product.points.map((point) => (
+                      <li key={point} className="flex gap-2">
+                        <span aria-hidden="true" className="mt-2 size-1.5 shrink-0 rounded-full bg-primary" />
+                        <span className="text-muted-foreground">{point}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
+              </li>
+            ))}
           </ul>
         </div>
       </section>
 
-      <section id="how-it-works" aria-labelledby="how-heading" className="border-b border-border">
+      <section id="how-it-works" aria-labelledby="how-heading" className="scroll-mt-16 border-b border-border">
         <div className="mx-auto w-full max-w-6xl px-4 py-14 sm:px-6">
-          <h2 id="how-heading" className="text-lg font-semibold tracking-tight">
-            How it works
+          <h2 id="how-heading" className="text-2xl font-semibold tracking-tight">
+            Up and running in minutes
           </h2>
 
-          <ol className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <ol className="mt-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {STEPS.map((step, index) => (
               <li key={step.title}>
                 <Card className="h-full p-5">
                   <span
                     aria-hidden="true"
-                    className="flex size-6 items-center justify-center rounded-full bg-secondary text-xs font-medium tabular-nums"
+                    className="flex size-7 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground tabular-nums"
                   >
                     {index + 1}
                   </span>
@@ -149,21 +232,56 @@ export default async function LandingPage() {
         </div>
       </section>
 
-      <section className="mx-auto w-full max-w-6xl px-4 py-14 sm:px-6">
-        <ContributionDisclaimer />
-        <p className="mt-6 text-sm text-muted-foreground">
-          GreenGrid does not control GitHub&apos;s contribution graph. Whether an activity appears
-          on your profile depends on GitHub&apos;s contribution rules.
-        </p>
-
-        <div className="mt-8">
-          <Button asChild>
-            <Link href={user ? "/dashboard" : "/login"}>
-              {user ? null : <GoogleIcon className="size-4" />}
-              {user ? "Open dashboard" : "Continue with Google"}
-            </Link>
-          </Button>
+      <section aria-labelledby="trust-heading" className="border-b border-border">
+        <div className="mx-auto w-full max-w-6xl px-4 py-14 sm:px-6">
+          <h2 id="trust-heading" className="text-2xl font-semibold tracking-tight">
+            Built to run safely
+          </h2>
+          <ul className="mt-8 grid gap-3 sm:grid-cols-3">
+            {TRUST.map((item) => {
+              const Icon = item.icon;
+              return (
+                <li key={item.title}>
+                  <Card className="h-full p-5">
+                    <Icon className="size-4 text-primary" aria-hidden="true" />
+                    <h3 className="mt-3 text-sm font-medium">{item.title}</h3>
+                    <p className="mt-1.5 text-sm text-muted-foreground">{item.description}</p>
+                  </Card>
+                </li>
+              );
+            })}
+          </ul>
         </div>
+      </section>
+
+      <section aria-labelledby="calendar-heading" className="border-b border-border">
+        <div className="mx-auto w-full max-w-6xl px-4 py-14 sm:px-6">
+          <h2 id="calendar-heading" className="text-lg font-semibold tracking-tight">
+            Commit activity at a glance
+          </h2>
+          <Card className="mt-6 p-5">
+            <div className="mb-4 flex items-baseline justify-between gap-3">
+              <h3 className="text-sm font-medium">Activity over the last year</h3>
+              <span className="text-xs text-muted-foreground">Example data</span>
+            </div>
+            <ContributionCalendar startDate={demo.startDate} endDate={demo.endDate} activities={demo.days} />
+          </Card>
+          <div className="mt-6">
+            <ContributionDisclaimer />
+          </div>
+          <p className="mt-4 text-sm text-muted-foreground">
+            GreenGrid does not control GitHub&apos;s contribution graph. Whether an activity appears on your
+            profile depends on GitHub&apos;s contribution rules.
+          </p>
+        </div>
+      </section>
+
+      <section className="mx-auto w-full max-w-6xl px-4 py-16 text-center sm:px-6">
+        <h2 className="text-2xl font-semibold tracking-tight">Ready to automate?</h2>
+        <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+          Sign in with Google, connect one account and create your first automation.
+        </p>
+        <div className="mt-6 flex justify-center">{cta}</div>
       </section>
     </MarketingShell>
   );

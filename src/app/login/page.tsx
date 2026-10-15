@@ -53,8 +53,8 @@ export default async function LoginPage({
           <div>
             <h1 className="text-lg font-semibold tracking-tight">Sign in to GreenGrid</h1>
             <p className="mt-1.5 text-sm text-muted-foreground">
-              Sign in with Google, then connect GitHub and Slack from Settings. Integration
-              credentials are encrypted on the server and never sent to your browser.
+              Sign in with Google, then connect only what you need (GitHub, Slack or Instagram) from
+              your dashboard. Credentials are encrypted on the server and never sent to your browser.
             </p>
           </div>
 

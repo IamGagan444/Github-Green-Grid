@@ -1,8 +1,15 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+import { GoogleIcon } from "@/components/icons/google-icon";
 import { Logo } from "@/components/layout/logo";
 import { Button } from "@/components/ui/button";
+
+const NAV_LINKS = [
+  { href: "/#automations", label: "Automations" },
+  { href: "/#how-it-works", label: "How it works" },
+  { href: "/privacy", label: "Privacy" },
+];
 
 const FOOTER_LINKS = [
   { href: "/privacy", label: "Privacy" },
@@ -29,12 +36,15 @@ export function MarketingShell({
           </Link>
 
           <nav aria-label="Primary" className="flex items-center gap-2">
-            <Button asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
-              <Link href="/privacy">Privacy</Link>
-            </Button>
+            {NAV_LINKS.map((link) => (
+              <Button key={link.href} asChild variant="ghost" size="sm" className="hidden sm:inline-flex">
+                <Link href={link.href}>{link.label}</Link>
+              </Button>
+            ))}
             <Button asChild size="sm">
               <Link href={isAuthenticated ? "/dashboard" : "/login"}>
-                {isAuthenticated ? "Open dashboard" : "Continue with GitHub"}
+                {isAuthenticated ? null : <GoogleIcon className="size-4" />}
+                {isAuthenticated ? "Open dashboard" : "Sign in with Google"}
               </Link>
             </Button>
           </nav>
@@ -50,7 +60,7 @@ export function MarketingShell({
           <div className="space-y-1">
             <Logo />
             <p className="text-xs text-muted-foreground">
-              Repository maintenance automation built on GitHub&apos;s official APIs.
+              Automations for GitHub, Slack and Instagram, built on their official APIs.
             </p>
           </div>
 
