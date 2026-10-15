@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
-import { DEFAULT_VALUES, InstagramAutomationForm } from "@/components/instagram/instagram-automation-form";
+import { DEFAULT_VALUES } from "@/components/instagram/form-values";
+import { InstagramAutomationForm } from "@/components/instagram/instagram-automation-form";
 import { Header } from "@/components/layout/header";
 import { requireUser } from "@/lib/auth";
 import { listInstagramIntegrations } from "@/services/instagram-service";
