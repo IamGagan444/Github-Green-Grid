@@ -24,18 +24,24 @@ export interface NavSection {
 
 export const NAV_SECTIONS: NavSection[] = [
   {
+    items: [{ href: "/dashboard", label: "Overview", icon: LayoutDashboard }],
+  },
+  {
+    label: "Standup updates",
     items: [
-      { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
-      { href: "/automations", label: "Standup automations", icon: Bot },
-      { href: "/instagram", label: "Instagram automations", icon: MessageCircle },
-      { href: "/executions", label: "Executions", icon: History },
+      { href: "/automations", label: "Automations", icon: Bot },
+      { href: "/executions", label: "Run history", icon: History },
     ],
+  },
+  {
+    label: "Instagram",
+    items: [{ href: "/instagram", label: "Auto-DM automations", icon: MessageCircle }],
   },
   {
     label: "Commit activity",
     items: [
-      { href: "/dashboard/activity", label: "Activity", icon: Activity },
       { href: "/dashboard/schedule", label: "Schedule", icon: CalendarClock },
+      { href: "/dashboard/activity", label: "Activity", icon: Activity },
       { href: "/dashboard/repositories", label: "Repositories", icon: FolderGit2 },
     ],
   },
@@ -52,9 +58,9 @@ export const ADMIN_SECTION: NavSection = {
 /** Bottom navigation on small screens: the five most used destinations. */
 export const MOBILE_NAV_ITEMS: NavItem[] = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
-  { href: "/automations", label: "Automations", icon: Bot },
-  { href: "/executions", label: "Runs", icon: History },
-  { href: "/dashboard/activity", label: "Activity", icon: Activity },
+  { href: "/automations", label: "Standups", icon: Bot },
+  { href: "/instagram", label: "Instagram", icon: MessageCircle },
+  { href: "/dashboard/schedule", label: "Commits", icon: CalendarClock },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
