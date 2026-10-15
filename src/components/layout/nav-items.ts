@@ -5,6 +5,7 @@ import {
   FolderGit2,
   History,
   LayoutDashboard,
+  MessageCircle,
   Settings,
   ShieldCheck,
 } from "lucide-react";
@@ -26,6 +27,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
       { href: "/automations", label: "Standup automations", icon: Bot },
+      { href: "/instagram", label: "Instagram automations", icon: MessageCircle },
       { href: "/executions", label: "Executions", icon: History },
     ],
   },

@@ -3,6 +3,7 @@ name: GreenGrid scheduler
 # Triggers GreenGrid's cron endpoints:
 #   /api/cron/activity   commit-activity schedules (hourly slots)
 #   /api/cron/standups   GitHub -> Slack standup automations
+#   /api/cron/instagram  Instagram DM retries and token refresh
 # Each endpoint decides what is due in every user's own timezone. Both are
 # idempotent, so late, repeated or overlapping triggers never double-post.
 #
@@ -49,9 +50,9 @@ jobs:
 
           # --fail-with-body so a non-2xx status fails the step but still prints
           # the API's error message. The secret is passed via a header, never a URL.
-          # Both endpoints run even if the first fails; the step fails afterwards.
+          # Every endpoint runs even if an earlier one fails; the step fails afterwards.
           status=0
-          for endpoint in activity standups; do
+          for endpoint in activity standups instagram; do
             echo "Triggering /api/cron/${endpoint}"
             curl --silent --show-error --fail-with-body \
               --max-time 120 \

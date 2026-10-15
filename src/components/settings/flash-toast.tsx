@@ -27,9 +27,25 @@ const MESSAGES: Record<string, Record<string, { type: "success" | "error"; text:
     connection_failed: { type: "error", text: "Slack could not complete the connection. Please try again." },
     rate_limited: { type: "error", text: "Too many connection attempts. Please wait a few minutes." },
   },
+  instagram: {
+    connected: { type: "success", text: "Instagram account connected." },
+    not_configured: { type: "error", text: "Instagram is not configured on this server yet." },
+    already_linked: { type: "error", text: "That Instagram account is already connected to another GreenGrid user." },
+    access_denied: { type: "error", text: "Instagram authorization was cancelled. Nothing changed." },
+    missing_state: { type: "error", text: "The Instagram connection request expired. Please try again." },
+    invalid_state: { type: "error", text: "The Instagram connection request could not be verified. Please try again." },
+    user_mismatch: { type: "error", text: "The Instagram connection was started by a different session." },
+    invalid_request: { type: "error", text: "Instagram returned an incomplete response. Please try again." },
+    connection_failed: {
+      type: "error",
+      text: "Instagram could not complete the connection. Make sure it is a Business or Creator account.",
+    },
+    rate_limited: { type: "error", text: "Too many connection attempts. Please wait a few minutes." },
+  },
   // Results of Server Actions that finish with a redirect.
   notice: {
     automation_deleted: { type: "success", text: "Automation deleted. Execution history was kept." },
+    instagram_automation_deleted: { type: "success", text: "Instagram automation deleted." },
     run_success: { type: "success", text: "Today's update was posted to Slack." },
     run_skipped: { type: "success", text: "No new commits since the last post, so nothing was posted." },
     run_failed: { type: "error", text: "The run failed. The details are below." },

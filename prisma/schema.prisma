@@ -40,6 +40,8 @@ model User {
   sessions            Session[]
   githubIntegration   GitHubIntegration?
   slackIntegrations   SlackIntegration[]
+  instagramIntegrations InstagramIntegration[]
+  instagramAutomations  InstagramAutomation[]
   repositories        Repository[]
   schedules           Schedule[]
   automations         Automation[]
@@ -399,6 +401,140 @@ model SlackThreadAnchor {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Instagram automations (event-driven: Meta webhooks, not the scheduler)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// An Instagram professional account connected via Instagram Login.
+model InstagramIntegration {
+  id     String @id @default(cuid())
+  userId String
+
+  // Instagram professional account ID (the `id` webhooks address as entry.id).
+  igUserId          String            @unique
+  // App-scoped user ID (`id` from /me). Deauthorize and data-deletion
+  // callbacks identify the account by this one.
+  appScopedId       String?           @unique
+  username          String
+  name              String?
+  profilePictureUrl String?
+  status            IntegrationStatus @default(CONNECTED)
+
+  // AES-256-GCM ciphertext of the long-lived (60 day) token. Refreshed by the
+  // Instagram cron before it expires. Cleared on disconnect.
+  accessTokenEncrypted String?
+  tokenExpiresAt       DateTime?
+  scopes               String[]  @default([])
+  webhookSubscribedAt  DateTime?
+
+  connectedAt    DateTime  @default(now())
+  disconnectedAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user        User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  automations InstagramAutomation[]
+  events      InstagramEvent[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([tokenExpiresAt])
+  @@map("instagram_integrations")
+}
+
+model InstagramAutomation {
+  id            String           @id @default(cuid())
+  userId        String
+  integrationId String
+  name          String
+  status        AutomationStatus @default(ACTIVE)
+
+  trigger   InstagramTrigger
+  // COMMENT only: restrict to these media IDs. Empty = every post and reel.
+  mediaIds  String[]         @default([])
+  // Lower-cased. Ignored when matchMode is ANY.
+  keywords  String[]         @default([])
+  matchMode KeywordMatch     @default(CONTAINS)
+
+  // COMMENT only: public reply under the comment, one variant picked at random.
+  publicReplyEnabled Boolean  @default(false)
+  publicReplies      String[] @default([])
+
+  // DM. `linkUrl` is sent as a URL button labelled `linkButtonLabel`.
+  dmMessage       String
+  linkUrl         String?
+  linkButtonLabel String  @default("Open link")
+
+  // Follow-gate: the first DM only asks to follow; the link is sent once a
+  // button tap confirms the person follows the account.
+  followGateEnabled Boolean @default(false)
+  followGateMessage String  @default("Follow us first, then tap the button below to get the link 👇")
+  followButtonLabel String  @default("I'm following ✅")
+
+  triggeredCount Int @default(0)
+  sentCount      Int @default(0)
+  clickCount     Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  integration InstagramIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  events      InstagramEvent[]
+
+  @@index([userId])
+  @@index([integrationId, status, trigger])
+  @@map("instagram_automations")
+}
+
+/// Webhook inbox and execution record. One row per Meta event; the unique
+/// idempotency key absorbs Meta's redeliveries.
+model InstagramEvent {
+  id            String  @id @default(cuid())
+  integrationId String
+  automationId  String?
+
+  // "comment:<id>" | "message:<mid>" | "postback:<mid>"
+  idempotencyKey String             @unique
+  type           InstagramEventType
+  senderIgsid    String
+  senderUsername String?
+  // COMMENT: comment id. Messages: mid.
+  sourceId       String
+  mediaId        String?
+  text           String?
+  // When Meta says the comment/message was created. Private replies must be
+  // sent within 7 days of a comment.
+  occurredAt     DateTime
+
+  status         RunStatus @default(RUNNING)
+  attempt        Int       @default(0)
+  leaseExpiresAt DateTime?
+  nextRetryAt    DateTime?
+
+  publicReplyStatus StepStatus @default(PENDING)
+  dmStatus          StepStatus @default(PENDING)
+  linkStatus        StepStatus @default(PENDING)
+
+  publicReplyId String?
+  dmMessageId   String?
+  errorCode     String?
+  errorMessage  String?
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  finishedAt DateTime?
+
+  integration InstagramIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  automation  InstagramAutomation? @relation(fields: [automationId], references: [id], onDelete: SetNull)
+
+  @@index([integrationId, createdAt])
+  @@index([automationId, createdAt])
+  @@index([status, nextRetryAt])
+  @@index([integrationId, senderIgsid])
+  @@map("instagram_events")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Audit & operations
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -512,6 +648,14 @@ enum AuditAction {
   GITHUB_DISCONNECTED
   SLACK_CONNECTED
   SLACK_DISCONNECTED
+  INSTAGRAM_CONNECTED
+  INSTAGRAM_DISCONNECTED
+  INSTAGRAM_REVOKED
+  INSTAGRAM_AUTOMATION_CREATED
+  INSTAGRAM_AUTOMATION_UPDATED
+  INSTAGRAM_AUTOMATION_PAUSED
+  INSTAGRAM_AUTOMATION_RESUMED
+  INSTAGRAM_AUTOMATION_DELETED
   AUTOMATION_CREATED
   AUTOMATION_UPDATED
   AUTOMATION_PAUSED
@@ -543,4 +687,25 @@ enum ExecutionStatus {
 enum ExecutionTrigger {
   SCHEDULED
   MANUAL
+}
+
+enum InstagramTrigger {
+  COMMENT
+  DM_KEYWORD
+  STORY_REPLY
+  STORY_MENTION
+}
+
+enum KeywordMatch {
+  CONTAINS
+  EXACT
+  ANY
+}
+
+enum InstagramEventType {
+  COMMENT
+  MESSAGE
+  STORY_REPLY
+  STORY_MENTION
+  POSTBACK
 }

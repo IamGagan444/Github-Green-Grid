@@ -39,6 +39,10 @@ export const RATE_LIMITS = {
   automationRun: { limit: 5, windowSeconds: 300 },
   adminWrite: { limit: 30, windowSeconds: 60 },
   webhook: { limit: 120, windowSeconds: 60 },
+  // Meta batches and retries deliveries from a small set of IPs.
+  instagramWebhook: { limit: 600, windowSeconds: 60 },
+  // Per Instagram account. Meta allows ~750 private replies/hour; stay under it.
+  instagramSend: { limit: 600, windowSeconds: 3600 },
   settingsWrite: { limit: 20, windowSeconds: 60 },
 } as const satisfies Record<string, RateLimitOptions>;
 

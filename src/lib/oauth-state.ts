@@ -5,7 +5,7 @@ import { randomToken, safeCompare } from "@/lib/encryption";
 import { isProduction } from "@/lib/env";
 
 /**
- * Single-use OAuth `state` for integration connect flows (GitHub, Slack).
+ * Single-use OAuth `state` for integration connect flows (GitHub, Slack, Instagram).
  *
  * The state is random, stored in an httpOnly cookie scoped to the callback, and
  * bound to the user who started the flow. The callback rejects the request if
@@ -13,7 +13,7 @@ import { isProduction } from "@/lib/env";
  * forged callback cannot attach an attacker's GitHub/Slack account to a victim.
  */
 
-export type OAuthProvider = "github" | "slack";
+export type OAuthProvider = "github" | "slack" | "instagram";
 
 const STATE_TTL_SECONDS = 600;
 

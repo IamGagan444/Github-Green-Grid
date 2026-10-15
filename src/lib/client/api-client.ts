@@ -3,17 +3,20 @@
 export class ApiRequestError extends Error {
   readonly code: string;
   readonly status: number;
+  /** e.g. `{ issues: [{ path, message }] }` for VALIDATION_ERROR. */
+  readonly details: unknown;
 
-  constructor(code: string, message: string, status: number) {
+  constructor(code: string, message: string, status: number, details?: unknown) {
     super(message);
     this.name = "ApiRequestError";
     this.code = code;
     this.status = status;
+    this.details = details;
   }
 }
 
 interface ErrorEnvelope {
-  error?: { code?: string; message?: string };
+  error?: { code?: string; message?: string; details?: unknown };
 }
 
 export async function apiFetch<TResponse>(
@@ -40,6 +43,7 @@ export async function apiFetch<TResponse>(
       envelope.error?.code ?? "INTERNAL_ERROR",
       envelope.error?.message ?? "Something went wrong. Please try again.",
       response.status,
+      envelope.error?.details,
     );
   }
 

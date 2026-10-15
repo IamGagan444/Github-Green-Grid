@@ -13,6 +13,7 @@ import { RATE_LIMITS } from "@/lib/rate-limit";
 import { settingsSchema } from "@/lib/validation/schemas";
 import { idParamSchema } from "@/validators/automation";
 import { disconnectGitHub } from "@/services/github-service";
+import { disconnectInstagram } from "@/services/instagram-service";
 import { disconnectSlack } from "@/services/slack-service";
 
 /** Updates automation defaults. */
@@ -65,8 +66,19 @@ export async function disconnectSlackAction(_previous: ActionState, formData: Fo
   });
 }
 
+export async function disconnectInstagramAction(_previous: ActionState, formData: FormData): Promise<ActionState> {
+  return runAction("action:integrations/instagram/disconnect", async () => {
+    const user = await authorize("integration:instagram:manage:own");
+    await enforceRateLimit(`instagram:disconnect:${user.userId}`, RATE_LIMITS.integrationConnect);
+    const { id } = z.object({ id: idParamSchema }).parse(formFields(formData));
+    await disconnectInstagram(user.userId, id);
+    revalidatePath("/", "layout");
+    return "Instagram account disconnected.";
+  });
+}
+
 /**
- * Deletes the account: revokes GitHub and Slack grants at the providers, then
+ * Deletes the account: revokes GitHub, Slack and Instagram grants at the providers, then
  * deletes the user and everything they own, and ends the session.
  */
 export async function deleteAccountAction(_previous: ActionState, _formData: FormData): Promise<ActionState> {
@@ -80,6 +92,11 @@ export async function deleteAccountAction(_previous: ActionState, _formData: For
       select: { id: true },
     });
     for (const workspace of workspaces) await disconnectSlack(user.userId, workspace.id);
+    const instagramAccounts = await prisma.instagramIntegration.findMany({
+      where: { userId: user.userId, status: "CONNECTED" },
+      select: { id: true },
+    });
+    for (const account of instagramAccounts) await disconnectInstagram(user.userId, account.id);
 
     await prisma.user.delete({ where: { id: user.userId } });
     await signOut({ redirect: false });
