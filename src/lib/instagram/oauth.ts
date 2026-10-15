@@ -65,9 +65,14 @@ export async function exchangeInstagramCode(code: string): Promise<InstagramToke
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
     short = (await response.json()) as ShortLivedResponse;
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (!response.ok) {
+      // error_message/error_type are Instagram's own text, never contain the secret.
+      const reason = (short as { error_type?: string }).error_type ?? short.error_message ?? "";
+      throw new Error(`HTTP ${response.status} ${reason}`.trim());
+    }
   } catch (error) {
-    throw new AppError("INSTAGRAM_OAUTH_FAILED", "instagram code exchange failed", { cause: error });
+    const detail = error instanceof Error ? error.message : "unknown";
+    throw new AppError("INSTAGRAM_OAUTH_FAILED", `instagram code exchange failed (${detail})`, { cause: error });
   }
 
   // The endpoint has returned both a flat and a `data: [...]` shape.
@@ -80,15 +85,18 @@ export async function exchangeInstagramCode(code: string): Promise<InstagramToke
 
 async function exchangeForLongLived(shortToken: string, appSecret: string) {
   try {
-    // Unversioned endpoint. `client_secret` must be a query parameter here;
-    // the token itself goes in the Authorization header.
+    // Unversioned endpoint that only reads its credentials from the query
+    // string. Server-to-server over HTTPS; the URL is never logged.
     const data = await callGraph<{ access_token: string; expires_in: number }>("access_token", shortToken, {
       versioned: false,
-      query: { grant_type: "ig_exchange_token", client_secret: appSecret },
+      query: { grant_type: "ig_exchange_token", client_secret: appSecret, access_token: shortToken },
     });
     return { accessToken: data.access_token, expiresInSeconds: data.expires_in };
   } catch (error) {
-    throw new AppError("INSTAGRAM_OAUTH_FAILED", "instagram long-lived token exchange failed", { cause: error });
+    const detail = error instanceof Error ? error.message : "unknown";
+    throw new AppError("INSTAGRAM_OAUTH_FAILED", `instagram long-lived token exchange failed (${detail})`, {
+      cause: error,
+    });
   }
 }
 
@@ -99,7 +107,7 @@ async function exchangeForLongLived(shortToken: string, appSecret: string) {
 export async function refreshInstagramToken(token: string): Promise<{ accessToken: string; expiresInSeconds: number }> {
   const data = await callGraph<{ access_token: string; expires_in: number }>("refresh_access_token", token, {
     versioned: false,
-    query: { grant_type: "ig_refresh_token" },
+    query: { grant_type: "ig_refresh_token", access_token: token },
   });
   return { accessToken: data.access_token, expiresInSeconds: data.expires_in };
 }

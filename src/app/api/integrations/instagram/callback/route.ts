@@ -37,7 +37,11 @@ export async function GET(request: NextRequest) {
     await connectInstagram(user.userId, grant);
     return back("connected");
   } catch (error) {
-    log.error("Instagram connection failed", { error: error as Error });
+    log.error("Instagram connection failed", {
+      code: error instanceof AppError ? error.code : undefined,
+      detail: error instanceof Error ? error.message : String(error),
+      error: error as Error,
+    });
     const alreadyLinked =
       error instanceof AppError && error.code === "INSTAGRAM_OAUTH_FAILED" && error.message.includes("another user");
     return back(alreadyLinked ? "already_linked" : "connection_failed");
