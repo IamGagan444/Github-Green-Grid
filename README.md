@@ -914,8 +914,9 @@ advisories are in ESLint tooling only (`braces`/`micromatch` through
 repositories and branches, Slack channels, Instagram media pages; 5-minute TTL).
 Keys are versioned and user-scoped (`gg:v1:u:<userId>:…`), enforced at runtime,
 and include the connection time so reconnecting starts clean. Tokens are never
-cached. Database queries are not cached in Redis: from the Singapore functions
-Neon answers in milliseconds, faster than a Redis round trip.
+cached. Database queries are not cached in Redis: functions, Neon and Upstash
+all run in Singapore, and a pooled Neon query (1–3 ms) is as fast as an
+Upstash REST call. Keep all three in the same region.
 
 **Rotating secrets.**
 

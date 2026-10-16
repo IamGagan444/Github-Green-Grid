@@ -17,9 +17,10 @@ import { createLogger } from "@/lib/logging/logger";
  *    share one loader call.
  *
  * What is cached (and why only this): third-party API reads that take
- * 300–1,000 ms. Database queries are not cached in Redis — measured from the
- * Singapore functions, Neon answers in 1–3 ms while the Upstash database
- * (Mumbai) takes tens of milliseconds, so caching them would be slower.
+ * 300–1,000 ms. Database queries are not cached in Redis: functions, Neon and
+ * Upstash all run in Singapore, where a pooled Neon query takes 1–3 ms and an
+ * Upstash REST call (a full HTTPS request) is no faster, so caching them
+ * would add work without saving time.
  *
  *   | Data                                   | TTL    | Invalidation                    |
  *   | -------------------------------------- | ------ | ------------------------------- |
