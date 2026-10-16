@@ -3,8 +3,8 @@ import "server-only";
 import { createLogger } from "@/lib/logging/logger";
 
 /**
- * Upstash Redis over its REST API, used for rate limiting and for caching slow
- * third-party reads (GitHub repositories/branches, Slack channels).
+ * Upstash Redis transport over its REST API. Used by the rate limiter, the
+ * token buckets and the application cache (`lib/cache/cache.ts`).
  *
  * Redis is an optimisation, never a dependency: every call has a short timeout,
  * failures open a circuit breaker so an unreachable Redis costs one slow request
@@ -16,12 +16,16 @@ const log = createLogger("redis");
 
 const REQUEST_TIMEOUT_MS = 1_500;
 const BREAKER_COOLDOWN_MS = 30_000;
-const MEMORY_MAX_ENTRIES = 500;
-const KEY_PREFIX = "greengrid:";
 
 type Command = Array<string | number>;
 
 let breakerOpenUntil = 0;
+/** Commands sent since this instance started (development diagnostics). */
+let commandCount = 0;
+
+export function getRedisCommandCount(): number {
+  return commandCount;
+}
 
 function credentials(): { url: string; token: string } | null {
   const url = process.env.UPSTASH_REDIS_REST_URL?.trim();
@@ -46,6 +50,7 @@ export async function redisPipeline(commands: Command[]): Promise<unknown[]> {
   const creds = credentials();
   if (!creds) throw new Error("Redis is not configured");
   if (Date.now() < breakerOpenUntil) throw new Error("Redis circuit is open");
+  commandCount += commands.length;
 
   try {
     const response = await fetch(`${creds.url}/pipeline`, {
@@ -71,110 +76,7 @@ export async function redisPipeline(commands: Command[]): Promise<unknown[]> {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Local fallback store
-// ─────────────────────────────────────────────────────────────────────────────
-
-const memory = new Map<string, { value: string; expiresAt: number }>();
-
-function memoryGet(key: string): string | null {
-  const entry = memory.get(key);
-  if (!entry) return null;
-  if (entry.expiresAt <= Date.now()) {
-    memory.delete(key);
-    return null;
-  }
-  return entry.value;
-}
-
-function memorySet(key: string, value: string, ttlSeconds: number): void {
-  if (memory.size >= MEMORY_MAX_ENTRIES) {
-    const oldest = memory.keys().next().value;
-    if (oldest !== undefined) memory.delete(oldest);
-  }
-  memory.set(key, { value, expiresAt: Date.now() + ttlSeconds * 1000 });
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Cache API
-// ─────────────────────────────────────────────────────────────────────────────
-
-async function cacheGet<T>(key: string): Promise<T | null> {
-  const fullKey = KEY_PREFIX + key;
-  let raw: string | null = null;
-
-  if (!isRedisConfigured()) {
-    raw = memoryGet(fullKey);
-  } else if (isRedisAvailable()) {
-    try {
-      const [result] = await redisPipeline([["GET", fullKey]]);
-      raw = typeof result === "string" ? result : null;
-    } catch {
-      return null;
-    }
-  }
-
-  if (raw === null) return null;
-  try {
-    return JSON.parse(raw) as T;
-  } catch {
-    return null;
-  }
-}
-
-async function cacheSet(key: string, value: unknown, ttlSeconds: number): Promise<void> {
-  const fullKey = KEY_PREFIX + key;
-  const raw = JSON.stringify(value);
-
-  if (!isRedisConfigured()) {
-    memorySet(fullKey, raw, ttlSeconds);
-    return;
-  }
-  if (!isRedisAvailable()) return;
-  try {
-    await redisPipeline([["SET", fullKey, raw, "EX", ttlSeconds]]);
-  } catch {
-    // Already logged; the value is simply not cached.
-  }
-}
-
-export async function cacheDelete(keys: string[]): Promise<void> {
-  if (keys.length === 0) return;
-  const fullKeys = keys.map((key) => KEY_PREFIX + key);
-
-  if (!isRedisConfigured()) {
-    for (const key of fullKeys) memory.delete(key);
-    return;
-  }
-  if (!isRedisAvailable()) return;
-  try {
-    await redisPipeline([["DEL", ...fullKeys]]);
-  } catch {
-    // Keys expire on their own TTL.
-  }
-}
-
-/**
- * Read-through cache. Only successful loader results are cached, so errors
- * (revoked tokens, rate limits) are never replayed from cache.
- */
-export async function cached<T>(
-  key: string,
-  ttlSeconds: number,
-  loader: () => Promise<T>,
-  options: { bypass?: boolean } = {},
-): Promise<T> {
-  if (!options.bypass) {
-    const hit = await cacheGet<T>(key);
-    if (hit !== null) return hit;
-  }
-  const value = await loader();
-  await cacheSet(key, value, ttlSeconds);
-  return value;
-}
-
 /** Test helper. */
 export function resetRedisState(): void {
-  memory.clear();
   breakerOpenUntil = 0;
 }

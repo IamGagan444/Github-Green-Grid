@@ -22,6 +22,7 @@ export type ApiErrorCode =
   | "NOT_FOUND"
   | "VALIDATION_ERROR"
   | "RATE_LIMITED"
+  | "PAYLOAD_TOO_LARGE"
   | "CONFLICT"
   | "GITHUB_ERROR"
   | "PROVIDER_ERROR"
@@ -34,6 +35,7 @@ const STATUS_BY_CODE: Record<ApiErrorCode, number> = {
   NOT_FOUND: 404,
   VALIDATION_ERROR: 422,
   RATE_LIMITED: 429,
+  PAYLOAD_TOO_LARGE: 413,
   CONFLICT: 409,
   GITHUB_ERROR: 502,
   PROVIDER_ERROR: 502,
@@ -49,12 +51,15 @@ export interface ApiErrorBody {
 export class ApiError extends Error {
   readonly code: ApiErrorCode;
   readonly details?: unknown;
+  /** Sent as `Retry-After` on 429 responses. */
+  readonly retryAfterSeconds?: number;
 
-  constructor(code: ApiErrorCode, message: string, details?: unknown) {
+  constructor(code: ApiErrorCode, message: string, details?: unknown, options: { retryAfterSeconds?: number } = {}) {
     super(message);
     this.name = "ApiError";
     this.code = code;
     this.details = details;
+    this.retryAfterSeconds = options.retryAfterSeconds;
   }
 }
 
@@ -77,7 +82,9 @@ export function jsonError(
 export function handleApiError(error: unknown, context: string): NextResponse<ApiErrorBody> {
   if (error instanceof ApiError) {
     if (error.code === "INTERNAL_ERROR") log.error(context, { message: error.message });
-    return jsonError(error.code, error.message, STATUS_BY_CODE[error.code], error.details);
+    const response = jsonError(error.code, error.message, STATUS_BY_CODE[error.code], error.details);
+    if (error.retryAfterSeconds) response.headers.set("Retry-After", String(error.retryAfterSeconds));
+    return response;
   }
 
   if (error instanceof AuthorizationError) {
@@ -148,23 +155,68 @@ export function assertSameOrigin(request: Request): void {
 export async function enforceRateLimit(key: string, options: RateLimitOptions): Promise<void> {
   const result = await rateLimit(key, options);
   if (!result.success) {
-    throw new ApiError("RATE_LIMITED", "Too many requests. Please wait a moment and try again.");
+    throw new ApiError("RATE_LIMITED", "Too many requests. Please wait a moment and try again.", undefined, {
+      retryAfterSeconds: Math.max(1, result.retryAfterSeconds ?? 1),
+    });
   }
+}
+
+/** Largest JSON body any API route accepts. */
+export const MAX_JSON_BODY_BYTES = 64 * 1024;
+
+/** Reads a request body as text, refusing anything over `maxBytes` without buffering all of it. */
+export async function readBodyText(request: Request, maxBytes: number): Promise<string> {
+  const declared = Number(request.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    throw new ApiError("PAYLOAD_TOO_LARGE", "The request body is too large.");
+  }
+  if (!request.body) return "";
+
+  const reader = request.body.getReader();
+  const decoder = new TextDecoder();
+  let total = 0;
+  let text = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      throw new ApiError("PAYLOAD_TOO_LARGE", "The request body is too large.");
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+  return text + decoder.decode();
 }
 
 export async function readJson<T>(
   request: Request,
   schema: { parse: (value: unknown) => T },
+  options: { maxBytes?: number } = {},
 ): Promise<T> {
+  const text = await readBodyText(request, options.maxBytes ?? MAX_JSON_BODY_BYTES);
   let body: unknown;
   try {
-    body = await request.json();
+    body = JSON.parse(text);
   } catch {
     throw new ApiError("VALIDATION_ERROR", "Request body must be valid JSON.");
   }
   return schema.parse(body);
 }
 
+/**
+ * The caller's IP for rate limiting. On Vercel, `x-real-ip` is set by the
+ * platform from the connecting address and cannot be supplied by the client,
+ * unlike the left-most `x-forwarded-for` entry, which a client can forge.
+ */
 export function clientIp(request: Request): string {
-  return request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
+  return clientIpFromHeaders(request.headers);
+}
+
+export function clientIpFromHeaders(headers: Headers): string {
+  const real = headers.get("x-real-ip")?.trim();
+  if (real) return real;
+  // Elsewhere, the right-most entry was added by the nearest trusted proxy.
+  const forwarded = headers.get("x-forwarded-for")?.split(",").map((part) => part.trim()).filter(Boolean);
+  return forwarded?.at(-1) || "unknown";
 }

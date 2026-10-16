@@ -3,20 +3,25 @@ import "server-only";
 import { isRedisAvailable, redisPipeline } from "@/lib/cache/redis";
 
 /**
- * Provider-agnostic fixed-window rate limiter.
+ * Sliding-window rate limiter (two-bucket approximation).
  *
- * Uses Upstash Redis when UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN
- * are set; otherwise (or while Redis is unreachable) an in-memory map. The
- * in-memory limiter is per-instance — set the Upstash variables for
- * multi-instance deployments.
+ * The estimate is `previous × (unelapsed share of the window) + current`, so
+ * a burst straddling a window boundary cannot get twice the limit, which a
+ * fixed window allows. Rejected requests are not counted.
+ *
+ * Uses Upstash Redis when configured, as one atomic EVAL per check; otherwise
+ * (or while Redis is unreachable) an in-memory map with the same algorithm.
+ * The in-memory limiter is per instance.
  */
 
 export interface RateLimitResult {
   success: boolean;
   limit: number;
   remaining: number;
-  /** Unix ms timestamp at which the current window resets. */
+  /** Unix ms timestamp at which the current window ends. */
   reset: number;
+  /** Seconds until a request would be allowed again; 0 (or absent) when allowed. */
+  retryAfterSeconds?: number;
 }
 
 export interface RateLimitOptions {
@@ -31,6 +36,7 @@ export const RATE_LIMITS = {
   scheduleWrite: { limit: 20, windowSeconds: 60 },
   manualRun: { limit: 5, windowSeconds: 300 },
   cron: { limit: 60, windowSeconds: 60 },
+  // Sign-in starts and OAuth callbacks, per client IP.
   auth: { limit: 10, windowSeconds: 60 },
   integrationConnect: { limit: 10, windowSeconds: 300 },
   integrationRead: { limit: 60, windowSeconds: 60 },
@@ -43,6 +49,8 @@ export const RATE_LIMITS = {
   instagramWebhook: { limit: 600, windowSeconds: 60 },
   // GitHub delivers from a small pool of hook IPs.
   githubWebhook: { limit: 600, windowSeconds: 60 },
+  // Telegram delivers from its own small IP range; the secret header is the real gate.
+  telegramWebhook: { limit: 600, windowSeconds: 60 },
   // Public form endpoints (per client IP, and per form).
   formSubmitIp: { limit: 5, windowSeconds: 60 },
   formSubmitForm: { limit: 60, windowSeconds: 3600 },
@@ -51,58 +59,109 @@ export const RATE_LIMITS = {
   settingsWrite: { limit: 20, windowSeconds: 60 },
 } as const satisfies Record<string, RateLimitOptions>;
 
-const memoryStore = new Map<string, { count: number; reset: number }>();
+/** Pure sliding-window decision, shared by both backends. */
+export function slidingWindowDecision(input: {
+  limit: number;
+  windowMs: number;
+  now: number;
+  previous: number;
+  current: number;
+}): { allowed: boolean; estimate: number; retryAfterMs: number; reset: number } {
+  const { limit, windowMs, now, previous, current } = input;
+  const windowStart = Math.floor(now / windowMs) * windowMs;
+  const elapsed = now - windowStart;
+  const weight = 1 - elapsed / windowMs;
+  const estimate = previous * weight + current;
+  const reset = windowStart + windowMs;
+  if (estimate < limit) return { allowed: true, estimate: estimate + 1, retryAfterMs: 0, reset };
 
-function memoryLimit(key: string, options: RateLimitOptions): RateLimitResult {
-  const now = Date.now();
-  const windowMs = options.windowSeconds * 1000;
-  const entry = memoryStore.get(key);
-
-  if (!entry || entry.reset <= now) {
-    const reset = now + windowMs;
-    memoryStore.set(key, { count: 1, reset });
-    return { success: true, limit: options.limit, remaining: options.limit - 1, reset };
+  // When will `previous × weight + current` drop below the limit?
+  let retryAfterMs: number;
+  if (current < limit && previous > 0) {
+    retryAfterMs = (1 - (limit - current) / previous) * windowMs - elapsed;
+  } else {
+    // The current window alone is full: wait for it to roll over, then for
+    // its weight (as the new previous window) to decay enough.
+    retryAfterMs = reset - now + Math.max(0, 1 - limit / Math.max(current, 1)) * windowMs;
   }
+  // +1 ms: at exactly that instant the estimate equals the limit, which is still blocked.
+  return { allowed: false, estimate, retryAfterMs: Math.max(1_000, Math.ceil(retryAfterMs) + 1), reset };
+}
 
-  entry.count += 1;
-  const remaining = Math.max(0, options.limit - entry.count);
+function toResult(options: RateLimitOptions, decision: ReturnType<typeof slidingWindowDecision>): RateLimitResult {
   return {
-    success: entry.count <= options.limit,
+    success: decision.allowed,
     limit: options.limit,
-    remaining,
-    reset: entry.reset,
+    remaining: decision.allowed ? Math.max(0, Math.floor(options.limit - decision.estimate)) : 0,
+    reset: decision.reset,
+    retryAfterSeconds: decision.allowed ? 0 : Math.ceil(decision.retryAfterMs / 1000),
   };
 }
 
-async function redisLimit(key: string, options: RateLimitOptions): Promise<RateLimitResult> {
+const memoryStore = new Map<string, { bucket: number; current: number; previous: number }>();
+
+function memoryLimit(key: string, options: RateLimitOptions, now = Date.now()): RateLimitResult {
   const windowMs = options.windowSeconds * 1000;
-  const bucket = Math.floor(Date.now() / windowMs);
-  const redisKey = `greengrid:rl:${key}:${bucket}`;
-  const reset = (bucket + 1) * windowMs;
+  const bucket = Math.floor(now / windowMs);
+  let entry = memoryStore.get(key);
+  if (!entry || entry.bucket < bucket - 1) entry = { bucket, current: 0, previous: 0 };
+  else if (entry.bucket === bucket - 1) entry = { bucket, current: 0, previous: entry.current };
 
-  const [result] = await redisPipeline([
-    ["INCR", redisKey],
-    ["EXPIRE", redisKey, options.windowSeconds + 1],
-  ]);
-  const count = Number(result ?? 0);
+  const decision = slidingWindowDecision({ limit: options.limit, windowMs, now, previous: entry.previous, current: entry.current });
+  if (decision.allowed) entry.current += 1;
+  memoryStore.set(key, entry);
 
-  return {
-    success: count <= options.limit,
-    limit: options.limit,
-    remaining: Math.max(0, options.limit - count),
-    reset,
-  };
+  if (memoryStore.size > 10_000) {
+    for (const [stale, value] of memoryStore) if (value.bucket < bucket - 1) memoryStore.delete(stale);
+  }
+  return toResult(options, decision);
 }
 
 /**
- * Consumes one token for `key`. Never throws: when Redis is unreachable the
+ * Reads both buckets and increments the current one only when allowed, in a
+ * single atomic EVAL (one Upstash command per check).
+ */
+const SLIDING_WINDOW_SCRIPT = `
+local current = tonumber(redis.call('GET', KEYS[1]) or '0')
+local previous = tonumber(redis.call('GET', KEYS[2]) or '0')
+local limit = tonumber(ARGV[1])
+local weight = tonumber(ARGV[2])
+if previous * weight + current >= limit then return {0, current, previous} end
+current = redis.call('INCR', KEYS[1])
+if current == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[3]) end
+return {1, current - 1, previous}`;
+
+async function redisLimit(key: string, options: RateLimitOptions, now = Date.now()): Promise<RateLimitResult> {
+  const windowMs = options.windowSeconds * 1000;
+  const bucket = Math.floor(now / windowMs);
+  const weight = 1 - (now - bucket * windowMs) / windowMs;
+
+  const [result] = await redisPipeline([
+    [
+      "EVAL",
+      SLIDING_WINDOW_SCRIPT,
+      2,
+      `greengrid:rl:${key}:${bucket}`,
+      `greengrid:rl:${key}:${bucket - 1}`,
+      options.limit,
+      weight,
+      // Each bucket must survive the following window, where it is "previous".
+      windowMs * 2 + 1_000,
+    ],
+  ]);
+  const [, current, previous] = (result as [number, number, number] | undefined) ?? [1, 0, 0];
+  return toResult(
+    options,
+    slidingWindowDecision({ limit: options.limit, windowMs, now, previous: Number(previous), current: Number(current) }),
+  );
+}
+
+/**
+ * Consumes one request for `key`. Never throws: when Redis is unreachable the
  * per-instance memory limiter still applies, rather than locking users out or
  * dropping protection entirely.
  */
-export async function rateLimit(
-  key: string,
-  options: RateLimitOptions,
-): Promise<RateLimitResult> {
+export async function rateLimit(key: string, options: RateLimitOptions): Promise<RateLimitResult> {
   if (isRedisAvailable()) {
     try {
       return await redisLimit(key, options);
@@ -119,11 +178,17 @@ export function resetMemoryRateLimits(): void {
   memoryStore.clear();
 }
 
+/** Exposed for tests that need a fixed clock. */
+export function memoryRateLimitAt(key: string, options: RateLimitOptions, now: number): RateLimitResult {
+  return memoryLimit(key, options, now);
+}
+
 export function rateLimitHeaders(result: RateLimitResult): Record<string, string> {
   return {
     "X-RateLimit-Limit": String(result.limit),
     "X-RateLimit-Remaining": String(result.remaining),
     "X-RateLimit-Reset": String(Math.ceil(result.reset / 1000)),
+    ...(result.success ? {} : { "Retry-After": String(Math.max(1, result.retryAfterSeconds ?? 1)) }),
   };
 }
 

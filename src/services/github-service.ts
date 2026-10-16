@@ -1,6 +1,6 @@
 import "server-only";
 
-import { cached } from "@/lib/cache/redis";
+import { cache, cacheKeys } from "@/lib/cache/cache";
 import { prisma } from "@/lib/db";
 import { decryptSecret, encryptSecret } from "@/lib/encryption";
 import { getEnv } from "@/lib/env";
@@ -262,8 +262,8 @@ const BRANCH_CACHE_SECONDS = 5 * 60;
  * Cache namespace for the user's current GitHub connection. It includes the
  * connection time, so reconnecting (or switching GitHub account) starts clean.
  */
-function githubCacheScope(userId: string, identity: { githubUserId: string; connectedAt: Date }): string {
-  return `gh:${userId}:${identity.githubUserId}:${identity.connectedAt.getTime()}`;
+function githubCacheKey(userId: string, identity: { githubUserId: string; connectedAt: Date }, ...parts: string[]): string {
+  return cacheKeys.user(userId, "gh", identity.githubUserId, identity.connectedAt.getTime(), ...parts);
 }
 
 export async function listAccessibleRepositories(
@@ -271,8 +271,8 @@ export async function listAccessibleRepositories(
   options: { refresh?: boolean } = {},
 ): Promise<GitHubRepositorySummary[]> {
   const identity = await requireConnectedIdentity(userId);
-  return cached(
-    `${githubCacheScope(userId, identity)}:repos`,
+  return cache.getOrSet(
+    githubCacheKey(userId, identity, "repos"),
     REPOSITORY_CACHE_SECONDS,
     () => withGitHub(userId, "listAccessibleRepositories", (octokit) => listUserRepositories(octokit)),
     { bypass: options.refresh },
@@ -286,8 +286,8 @@ export async function listRepositoryBranches(
   options: { refresh?: boolean } = {},
 ): Promise<GitHubBranchSummary[]> {
   const identity = await requireConnectedIdentity(userId);
-  return cached(
-    `${githubCacheScope(userId, identity)}:branches:${owner.toLowerCase()}/${name.toLowerCase()}`,
+  return cache.getOrSet(
+    githubCacheKey(userId, identity, "branches", `${owner.toLowerCase()}/${name.toLowerCase()}`),
     BRANCH_CACHE_SECONDS,
     () => withGitHub(userId, "listRepositoryBranches", (octokit) => listBranches(octokit, owner, name)),
     { bypass: options.refresh },

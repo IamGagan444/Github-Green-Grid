@@ -4,7 +4,10 @@ import { runScheduledActivity } from "@/lib/activity/run-activity";
 import { prisma } from "@/lib/db";
 import { getDueOccurrences } from "@/lib/schedule/next-run";
 import { pruneExpiredSessions } from "@/lib/auth/maintenance";
+import { createLogger } from "@/lib/logging/logger";
 import { isCronAuthorised } from "@/lib/scheduler/cron-auth";
+
+const log = createLogger("cron-activity");
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -70,10 +73,10 @@ async function processDueSchedules(): Promise<CronSummary> {
         else summary.failed += 1;
       } catch (error) {
         summary.failed += 1;
-        console.error("[cron] schedule execution threw", {
+        log.error("schedule execution threw", {
           scheduleId: schedule.id,
           slotIndex: due.slotIndex,
-          error: error instanceof Error ? error.message : "unknown error",
+          error: error instanceof Error ? error : String(error),
         });
       }
     }
@@ -96,7 +99,7 @@ export async function POST(request: NextRequest) {
     await pruneExpiredSessions();
     return NextResponse.json(summary);
   } catch (error) {
-    console.error("[cron] batch failed", error);
+    log.error("batch failed", { error: error instanceof Error ? error : String(error) });
     return NextResponse.json(
       { error: { code: "INTERNAL_ERROR", message: "Scheduled activity couldn't be completed." } },
       { status: 500 },

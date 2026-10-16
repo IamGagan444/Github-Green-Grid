@@ -4,7 +4,7 @@ import { clientIp } from "@/lib/api";
 import { getInstagramConfig } from "@/lib/env";
 import { parseSignedRequest } from "@/lib/instagram/signature";
 import { createLogger } from "@/lib/logging/logger";
-import { rateLimit, RATE_LIMITS } from "@/lib/rate-limit";
+import { rateLimit, rateLimitHeaders, RATE_LIMITS } from "@/lib/rate-limit";
 import { isInstagramConfigured, markInstagramRevokedByAppScopedId } from "@/services/instagram-service";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +15,7 @@ const log = createLogger("instagram-deauthorize");
 /** Meta calls this when someone removes the app from their Instagram settings. */
 export async function POST(request: NextRequest) {
   const limit = await rateLimit(`instagram-deauth:${clientIp(request)}`, RATE_LIMITS.webhook);
-  if (!limit.success) return NextResponse.json({ ok: false }, { status: 429 });
+  if (!limit.success) return NextResponse.json({ ok: false }, { status: 429, headers: rateLimitHeaders(limit) });
   if (!isInstagramConfigured()) return NextResponse.json({ ok: false }, { status: 503 });
 
   const form = await request.formData().catch(() => null);

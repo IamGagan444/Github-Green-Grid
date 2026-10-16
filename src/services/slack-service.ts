@@ -1,6 +1,6 @@
 import "server-only";
 
-import { cached } from "@/lib/cache/redis";
+import { cache, cacheKeys } from "@/lib/cache/cache";
 import { prisma } from "@/lib/db";
 import { decryptSecret, encryptSecret } from "@/lib/encryption";
 import { ConfigurationError, getSlackConfig } from "@/lib/env";
@@ -320,8 +320,8 @@ export async function listWorkspaceChannels(
   // Ownership and status are checked before the cache is consulted; the key
   // includes the connection time so a reinstall starts clean.
   const integration = await loadIntegration(integrationId, userId);
-  return cached(
-    `slack:${userId}:${integrationId}:${integration.connectedAt.getTime()}:channels:${mode}`,
+  return cache.getOrSet(
+    cacheKeys.user(userId, "slack", integrationId, integration.connectedAt.getTime(), "channels", mode),
     CHANNEL_CACHE_SECONDS,
     () =>
       guarded(integrationId, async () => {

@@ -28,7 +28,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
 
     const limit = await rateLimit(`schedules:update:${user.userId}`, RATE_LIMITS.scheduleWrite);
     if (!limit.success) {
-      throw new ApiError("RATE_LIMITED", "Too many schedule changes. Try again shortly.");
+      throw new ApiError("RATE_LIMITED", "Too many schedule changes. Try again shortly.", undefined, { retryAfterSeconds: limit.retryAfterSeconds ?? 1 });
     }
 
     const input = await readJson(request, updateScheduleSchema);

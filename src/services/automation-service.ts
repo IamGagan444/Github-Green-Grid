@@ -6,7 +6,7 @@ import { commitWindow, getNextRun, localDayKey, normaliseScheduleTimes } from "@
 import type { AutomationSnapshot } from "@/lib/automation/types";
 import { prisma } from "@/lib/db";
 import { AppError } from "@/lib/errors";
-import { assertPermission, assertResourceAccess, AuthorizationError, type Actor } from "@/lib/rbac";
+import { assertPermission, AuthorizationError, ownerScope, type Actor } from "@/lib/rbac";
 import { buildAiParent, buildDateHeader, buildUpdateMessage, formatLongDate } from "@/lib/slack/message";
 import { TEST_EVENT_TYPE } from "@/lib/slack/types";
 import type { Automation, Prisma } from "@/generated/prisma/client";
@@ -177,9 +177,21 @@ export async function listAllAutomations(options: { status?: AutomationStatus; p
  * Anything else is NOT_FOUND — IDs cannot be probed.
  */
 export async function getAutomationForActor(actor: Actor, automationId: string): Promise<AutomationSummary> {
-  const record = await prisma.automation.findUnique({ where: { id: automationId }, include: summaryInclude });
+  const record = await prisma.automation.findFirst({
+    where: { id: automationId, ...ownerScope(actor, "automation:read:own", "automation:read:all") },
+    include: summaryInclude,
+  });
   if (!record) throw new AuthorizationError("NOT_FOUND");
-  assertResourceAccess(actor, record.userId, "automation:read:own", "automation:read:all");
+  return toSummary(record);
+}
+
+/** Owner-only read (tests and other owner actions): admins get NOT_FOUND for other users' automations. */
+export async function getOwnAutomation(actor: Actor, automationId: string): Promise<AutomationSummary> {
+  const record = await prisma.automation.findFirst({
+    where: { id: automationId, ...ownerScope(actor, "automation:read:own") },
+    include: summaryInclude,
+  });
+  if (!record) throw new AuthorizationError("NOT_FOUND");
   return toSummary(record);
 }
 

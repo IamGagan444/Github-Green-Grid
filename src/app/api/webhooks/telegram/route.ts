@@ -1,7 +1,9 @@
 import { after, NextResponse, type NextRequest } from "next/server";
 
+import { clientIp, readBodyText } from "@/lib/api";
 import { ConfigurationError, getTelegramConfig } from "@/lib/env";
 import { createLogger } from "@/lib/logging/logger";
+import { rateLimit, rateLimitHeaders, RATE_LIMITS } from "@/lib/rate-limit";
 import { isTelegramWebhookAuthorised, telegramUpdateSchema } from "@/lib/telegram/bot";
 import { processTelegramUpdate } from "@/services/telegram-service";
 
@@ -20,6 +22,9 @@ const MAX_BODY_BYTES = 64 * 1024;
  * redeliver it); handling happens after the response.
  */
 export async function POST(request: NextRequest) {
+  const limit = await rateLimit(`telegram-webhook:${clientIp(request)}`, RATE_LIMITS.telegramWebhook);
+  if (!limit.success) return NextResponse.json({ ok: false }, { status: 429, headers: rateLimitHeaders(limit) });
+
   let secret: string;
   try {
     secret = getTelegramConfig().webhookSecret;
@@ -31,8 +36,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: false }, { status: 401 });
   }
 
-  const rawBody = await request.text();
-  if (rawBody.length > MAX_BODY_BYTES) return NextResponse.json({ ok: true });
+  // Oversized updates are acknowledged and dropped (Telegram would otherwise redeliver them).
+  const rawBody = await readBodyText(request, MAX_BODY_BYTES).catch(() => null);
+  if (rawBody === null) return NextResponse.json({ ok: true });
 
   let update;
   try {

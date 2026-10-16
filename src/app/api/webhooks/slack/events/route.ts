@@ -1,9 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { z } from "zod";
 
-import { clientIp } from "@/lib/api";
+import { clientIp, readBodyText } from "@/lib/api";
 import { createLogger } from "@/lib/logging/logger";
-import { rateLimit, RATE_LIMITS } from "@/lib/rate-limit";
+import { rateLimit, rateLimitHeaders, RATE_LIMITS } from "@/lib/rate-limit";
 import { verifySlackSignature } from "@/lib/slack/signature";
 import { markWorkspaceRevoked } from "@/services/slack-service";
 
@@ -35,13 +35,13 @@ const envelopeSchema = z.discriminatedUnion("type", [
  */
 export async function POST(request: NextRequest) {
   const limit = await rateLimit(`slack-events:${clientIp(request)}`, RATE_LIMITS.webhook);
-  if (!limit.success) return NextResponse.json({ ok: false }, { status: 429 });
+  if (!limit.success) return NextResponse.json({ ok: false }, { status: 429, headers: rateLimitHeaders(limit) });
 
   const signingSecret = process.env.SLACK_SIGNING_SECRET?.trim();
   if (!signingSecret) return NextResponse.json({ ok: false }, { status: 503 });
 
-  const rawBody = await request.text();
-  if (rawBody.length > MAX_BODY_BYTES) return NextResponse.json({ ok: false }, { status: 413 });
+  const rawBody = await readBodyText(request, MAX_BODY_BYTES).catch(() => null);
+  if (rawBody === null) return NextResponse.json({ ok: false }, { status: 413 });
 
   const valid = verifySlackSignature({
     signingSecret,

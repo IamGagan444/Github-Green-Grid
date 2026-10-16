@@ -13,6 +13,9 @@ import {
 } from "@/lib/github";
 import { getLocalDayKey } from "@/lib/schedule/timezone";
 import type { ExecutionTrigger } from "@/generated/prisma/enums";
+import { createLogger } from "@/lib/logging/logger";
+
+const log = createLogger("activity");
 
 export type RunOutcome =
   | { status: "COMPLETED"; executionId: string; commitSha: string; commitUrl: string; commitMessage: string; repositoryFullName: string; executedAt: Date }
@@ -172,7 +175,7 @@ export async function runScheduledActivity(request: RunRequest): Promise<RunOutc
       error instanceof GitHubApiError ? error : toGitHubApiError(error, "runScheduledActivity");
 
     // Detail is logged server-side; only `userMessage` reaches the client.
-    console.error("[activity] execution failed", {
+    log.error("execution failed", {
       executionId,
       scheduleId: schedule.id,
       code: apiError.code,

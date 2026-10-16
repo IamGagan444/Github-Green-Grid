@@ -1,9 +1,11 @@
 import type { Metadata, Viewport } from "next";
+import { headers } from "next/headers";
 
 import { THEME_INIT_SCRIPT } from "@/components/layout/theme-script";
 import { QueryProvider } from "@/components/providers/query-provider";
 import { StoreProvider } from "@/components/providers/store-provider";
 import { Toaster } from "@/components/ui/toaster";
+import { NONCE_HEADER } from "@/lib/security/csp";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -32,13 +34,15 @@ export const viewport: Viewport = {
   initialScale: 1,
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Set by src/proxy.ts; the Content-Security-Policy only runs scripts carrying it.
+  const nonce = (await headers()).get(NONCE_HEADER) ?? undefined;
   return (
     // The theme class is set before paint by THEME_INIT_SCRIPT (stored choice,
     // else OS preference); suppressHydrationWarning covers that attribute.
     <html lang="en" suppressHydrationWarning>
       <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body className="min-h-dvh bg-background text-foreground">
         <a

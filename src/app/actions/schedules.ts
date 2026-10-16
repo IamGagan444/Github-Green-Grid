@@ -13,7 +13,7 @@ const scheduleIdSchema = z.string().min(1).max(64).regex(/^[A-Za-z0-9_-]+$/);
 
 async function limitScheduleWrites(userId: string, kind: "update" | "delete"): Promise<void> {
   const limit = await rateLimit(`schedules:${kind}:${userId}`, RATE_LIMITS.scheduleWrite);
-  if (!limit.success) throw new ApiError("RATE_LIMITED", "Too many schedule changes. Try again shortly.");
+  if (!limit.success) throw new ApiError("RATE_LIMITED", "Too many schedule changes. Try again shortly.", undefined, { retryAfterSeconds: limit.retryAfterSeconds ?? 1 });
 }
 
 export async function setScheduleEnabledAction(_previous: ActionState, formData: FormData): Promise<ActionState> {

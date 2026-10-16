@@ -20,7 +20,7 @@ import { aiSummarySchema } from "@/lib/ai/schema";
 import { prisma } from "@/lib/db";
 import { AppError } from "@/lib/errors";
 import { createLogger } from "@/lib/logging/logger";
-import { assertResourceAccess, AuthorizationError, type Actor } from "@/lib/rbac";
+import { AuthorizationError, ownerScope, type Actor } from "@/lib/rbac";
 import { Prisma } from "@/generated/prisma/client";
 import type { RunStatus, RunTrigger } from "@/generated/prisma/enums";
 import { recordAudit } from "@/services/audit-service";
@@ -397,8 +397,8 @@ export async function listExecutions(query: ExecutionListQuery) {
 
 /** Loads an execution the actor may see (owner, or admin). Never returns secrets. */
 export async function getExecutionForActor(actor: Actor, executionId: string) {
-  const execution = await prisma.execution.findUnique({
-    where: { id: executionId },
+  const execution = await prisma.execution.findFirst({
+    where: { id: executionId, ...ownerScope(actor, "execution:read:own", "execution:read:all") },
     select: {
       ...listSelect,
       repositories: true,
@@ -417,6 +417,5 @@ export async function getExecutionForActor(actor: Actor, executionId: string) {
     },
   });
   if (!execution) throw new AuthorizationError("NOT_FOUND");
-  assertResourceAccess(actor, execution.userId, "execution:read:own", "execution:read:all");
   return execution;
 }

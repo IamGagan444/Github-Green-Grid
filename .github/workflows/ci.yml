@@ -1,0 +1,43 @@
+name: CI
+
+# Runs on pull requests and pushes to main. On a private repository each run
+# uses GitHub Actions minutes (2,000 free per month); one run takes about 3.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # Placeholder values so `prisma generate` and type-only imports work; no database is used.
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+
+      # Fails on high or critical advisories in anything that ships to production.
+      # Dev-only tooling (ESLint plugins) is reported but does not fail the build.
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Audit all dependencies (report only)
+        run: npm audit --audit-level=high || true
+
+      - run: npx prisma generate
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test

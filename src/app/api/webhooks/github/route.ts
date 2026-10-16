@@ -1,10 +1,10 @@
 import { after, NextResponse, type NextRequest } from "next/server";
 
-import { clientIp } from "@/lib/api";
+import { clientIp, readBodyText } from "@/lib/api";
 import { ConfigurationError, getGitHubWebhookSecret } from "@/lib/env";
 import { verifyGitHubSignature } from "@/lib/github/webhook";
 import { createLogger } from "@/lib/logging/logger";
-import { rateLimit, RATE_LIMITS } from "@/lib/rate-limit";
+import { rateLimit, rateLimitHeaders, RATE_LIMITS } from "@/lib/rate-limit";
 import { handleGitHubDelivery } from "@/services/github-webhook-service";
 import { processEventNow } from "@/services/notification-service";
 
@@ -25,7 +25,7 @@ const AFTER_BUDGET_MS = 40_000;
  */
 export async function POST(request: NextRequest) {
   const limit = await rateLimit(`github-webhook:${clientIp(request)}`, RATE_LIMITS.githubWebhook);
-  if (!limit.success) return NextResponse.json({ ok: false }, { status: 429 });
+  if (!limit.success) return NextResponse.json({ ok: false }, { status: 429, headers: rateLimitHeaders(limit) });
 
   let secret: string;
   try {
@@ -35,8 +35,8 @@ export async function POST(request: NextRequest) {
     throw error;
   }
 
-  const rawBody = await request.text();
-  if (rawBody.length > MAX_BODY_BYTES) return NextResponse.json({ ok: false }, { status: 413 });
+  const rawBody = await readBodyText(request, MAX_BODY_BYTES).catch(() => null);
+  if (rawBody === null) return NextResponse.json({ ok: false }, { status: 413 });
   if (!verifyGitHubSignature({ secret, signature: request.headers.get("x-hub-signature-256"), rawBody })) {
     return NextResponse.json({ ok: false }, { status: 401 });
   }

@@ -4,7 +4,7 @@ import { assertSameOrigin, authorize, enforceRateLimit, handleApiError } from "@
 import { AuthorizationError } from "@/lib/rbac";
 import { RATE_LIMITS } from "@/lib/rate-limit";
 import { idParamSchema } from "@/validators/automation";
-import { getAutomationForActor, previewAutomation } from "@/services/automation-service";
+import { getOwnAutomation, previewAutomation } from "@/services/automation-service";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -18,8 +18,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ id
     await enforceRateLimit(`automation:test:${user.userId}`, RATE_LIMITS.automationTest);
     const id = idParamSchema.parse((await context.params).id);
 
-    const automation = await getAutomationForActor(user, id);
-    if (automation.userId !== user.userId) throw new AuthorizationError("NOT_FOUND");
+    const automation = await getOwnAutomation(user, id);
     if (!automation.slackIntegrationId) throw new AuthorizationError("NOT_FOUND", "Select a Slack workspace first.");
 
     const preview = await previewAutomation(

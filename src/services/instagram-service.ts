@@ -12,7 +12,7 @@ import {
   replyToComment,
   sendMessage,
   subscribeApp,
-  type InstagramMedia,
+  type MediaPage,
 } from "@/lib/instagram/client";
 import {
   MAX_ATTEMPTS,
@@ -23,7 +23,7 @@ import {
 import { refreshInstagramToken, type InstagramTokenGrant } from "@/lib/instagram/oauth";
 import { createLogger } from "@/lib/logging/logger";
 import { rateLimit, RATE_LIMITS } from "@/lib/rate-limit";
-import { cached } from "@/lib/cache/redis";
+import { cache, cacheKeys } from "@/lib/cache/cache";
 import { recordAudit } from "@/services/audit-service";
 
 const log = createLogger("instagram-service");
@@ -289,17 +289,25 @@ export async function refreshExpiringInstagramTokens(now = new Date()): Promise<
 
 const MEDIA_CACHE_SECONDS = 5 * 60;
 
+/**
+ * One page (10) of the account's media for the post picker. Ownership is
+ * checked before the cache is consulted; each page is cached per user,
+ * account connection and cursor.
+ */
 export async function listAccountMedia(
   userId: string,
   integrationId: string,
-  options: { refresh?: boolean } = {},
-): Promise<InstagramMedia[]> {
+  options: { cursor?: string | null; refresh?: boolean } = {},
+): Promise<MediaPage> {
   const integration = await loadConnected(integrationId);
   if (integration.userId !== userId) throw new AppError("INSTAGRAM_NOT_CONNECTED", "instagram integration not owned");
-  return cached(
-    `instagram:${integrationId}:${integration.connectedAt.getTime()}:media`,
+  return cache.getOrSet(
+    cacheKeys.user(userId, "ig", integrationId, integration.connectedAt.getTime(), "media", options.cursor ?? "first"),
     MEDIA_CACHE_SECONDS,
-    () => guarded(integrationId, () => listMedia(decryptOrRevoked(integration.accessTokenEncrypted!))),
+    () =>
+      guarded(integrationId, () =>
+        listMedia(decryptOrRevoked(integration.accessTokenEncrypted!), { after: options.cursor ?? null }),
+      ),
     { bypass: options.refresh },
   );
 }
@@ -320,7 +328,7 @@ export function createInstagramPort(integrationId: string): InstagramPort {
     const limit = await rateLimit(`instagram:send:${integrationId}`, RATE_LIMITS.instagramSend);
     if (!limit.success) {
       throw new AppError("INSTAGRAM_RATE_LIMITED", "per-account send budget exhausted", {
-        retryAfterMs: Math.max(limit.reset - Date.now(), 60_000),
+        retryAfterMs: Math.max((limit.retryAfterSeconds ?? 60) * 1000, 60_000),
       });
     }
   };

@@ -144,6 +144,24 @@ export function assertResourceAccess(
   throw new AuthorizationError("NOT_FOUND");
 }
 
+/**
+ * The `where` fragment that limits a lookup to what the actor may see: their
+ * own rows, or every row for an actor holding `adminPermission`. Putting the
+ * owner in the query (rather than loading the row and checking afterwards)
+ * means a missing check can never leak another user's row.
+ */
+export function ownerScope(
+  actor: Actor | null | undefined,
+  ownPermission: Permission,
+  adminPermission?: Permission,
+): { userId?: string } {
+  if (!actor) throw new AuthorizationError("UNAUTHORIZED");
+  if (actor.status !== "ACTIVE") throw new AuthorizationError("ACCOUNT_DISABLED");
+  if (adminPermission && hasPermission(actor, adminPermission)) return {};
+  if (hasPermission(actor, ownPermission)) return { userId: actor.userId };
+  throw new AuthorizationError("NOT_FOUND");
+}
+
 export function isAdmin(actor: Pick<Actor, "role"> | null | undefined): boolean {
   return actor?.role === "ADMIN";
 }
