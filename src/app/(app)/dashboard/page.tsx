@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { AlertTriangle, Bot, CalendarClock, CirclePlay, MessageCircle, Send, Settings } from "lucide-react";
 
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
+import { AutomationGallery } from "@/components/dashboard/automation-gallery";
 import { NewAutomationMenu } from "@/components/dashboard/new-automation-menu";
 import { ProductCard } from "@/components/dashboard/product-card";
 import { SetupChecklist } from "@/components/dashboard/setup-checklist";
@@ -74,7 +75,7 @@ async function DashboardBody({
         <StatsCard
           label="Active automations"
           value={data.activeTotal}
-          hint="across standups, Instagram and commits"
+          hint="standups, Instagram, commits and hub rules"
           icon={CirclePlay}
           tone="success"
         />
@@ -173,6 +174,15 @@ async function DashboardBody({
           />
         </div>
       </section>
+
+      <AutomationGallery
+        hubReady={data.hub.ready}
+        connections={{
+          ...data.connections,
+          github: data.github.connected,
+          slack: data.slackConnected,
+        }}
+      />
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <ActivityFeed items={data.feed} timezone={timezone} />

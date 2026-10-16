@@ -235,6 +235,7 @@ export interface PostMessageInput {
   text: string;
   threadTs?: string;
   metadata?: SlackMessageMetadata;
+  blocks?: unknown[];
 }
 
 /**
@@ -251,6 +252,7 @@ export async function postMessage(token: string, input: PostMessageInput): Promi
     unfurl_links: false,
     unfurl_media: false,
     ...(input.metadata ? { metadata: JSON.stringify(input.metadata) } : {}),
+    ...(input.blocks ? { blocks: JSON.stringify(input.blocks) } : {}),
   });
   return { ts: data.ts, channel: data.channel };
 }

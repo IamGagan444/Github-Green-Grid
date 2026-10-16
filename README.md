@@ -40,6 +40,7 @@ What GreenGrid explicitly does **not** do:
 - [Tech stack](#tech-stack)
 - [Architecture](#architecture)
 - [Standup automations](#standup-automations)
+- [Notification hub](#notification-hub)
 - [Roles and access control](#roles-and-access-control)
 - [Local development](#local-development)
 - [Google sign-in setup](#google-sign-in-setup)
@@ -47,6 +48,9 @@ What GreenGrid explicitly does **not** do:
 - [Required GitHub permissions](#required-github-permissions)
 - [Slack app setup](#slack-app-setup)
 - [NVIDIA API setup](#nvidia-api-setup)
+- [Telegram bot setup](#telegram-bot-setup)
+- [Connect Google setup (Sheets and Gmail)](#connect-google-setup-sheets-and-gmail)
+- [GitHub App webhook setup](#github-app-webhook-setup)
 - [Upgrading an existing GreenGrid deployment](#upgrading-an-existing-greengrid-deployment)
 - [Database setup](#database-setup)
 - [Environment variables](#environment-variables)
@@ -259,6 +263,65 @@ unavailable repositories, invalid timezones — are recorded with a user-facing
 reason and not retried. A GitHub 401 or Slack `token_revoked` flips that
 integration to `REVOKED` and the UI asks the user to reconnect.
 
+## Notification hub
+
+A generic "event in → rules → message out" engine that the free automations
+share. It runs at **$0 per user and per message**: messages go only through
+Telegram (Bot API), Discord webhooks, Slack, and the user's own Gmail
+(`gmail.send`). WhatsApp is never called — messages include `wa.me` links the
+owner taps to send.
+
+```
+GitHub App webhook ─┐                                                       ┌─ TelegramChannel (Bot API)
+Uptime checker ─────┼─► NotificationEvent ─► rules ─► WorkflowRun ─► steps ─┼─ DiscordWebhookChannel
+(forms, reminders,  │   (unique key)        (Zod)    (lease, retry)        ├─ SlackChannel → SlackPort
+ digest, cross-post)┘                                                       └─ EmailChannel → Gmail
+```
+
+- **Events** (`notification_events`) are stored once per idempotency key
+  (`gh:<X-GitHub-Delivery>`, `uptime:<monitor>:<state>:<at>`, …). Only a small
+  normalised message and a few filter attributes are kept, never raw payloads.
+- **Rules** (`notification_rules`) match events by source, type and filter
+  (repositories, monitors) and target one or more verified channels.
+- **Fan-out** creates one `WorkflowRun` per (event, rule) with key
+  `notify:<eventId>:<ruleId>` and one step per channel with key
+  `notify:<eventId>:<ruleId>:<channelId>`, so re-running a fan-out creates nothing new.
+- **The workflow engine** (`src/lib/workflow/engine.ts`) claims a run with a
+  lease (compare-and-swap, like Instagram events), executes steps in order and
+  records each one before the next. Delivered steps are never re-sent.
+  Transient failures retry at 1, 5, 15 and 60 minutes (5 attempts; a
+  provider's `retry_after` wins). Permanent failures (bot blocked, webhook
+  deleted, token revoked) mark the channel *Needs attention* and alert the
+  user once a day on their other channels.
+- **At-most-once steps** (LinkedIn posts) are marked `IN_FLIGHT` before the
+  call. If the worker dies or the answer is ambiguous, the step becomes
+  `UNKNOWN` and is never retried, so a post that returned 2xx is never posted twice.
+- **Fairness**: due runs are interleaved round-robin across users. Telegram
+  sends pass a GCRA token bucket (25 msg/s global, 1 msg/s per chat, 20/min per
+  group; shared through Upstash when configured). Daily caps in `quota_usage`
+  (Telegram 300 and email 100 per user; YouTube 200 units per user and 9,000
+  globally) are compare-and-swap counters that cannot overshoot.
+- **Uptime**: monitors are checked every 15 minutes (HEAD, falling back to
+  GET, 10 s timeout, one confirmation retry before "down"). Alerts fire only on
+  a state change. TLS certificates are checked daily, alerting at 14 and 3 days.
+- **SSRF**: every user-supplied URL (uptime, feeds, AI base URL) goes through
+  `safeFetch`, which resolves the host and refuses private, loopback,
+  link-local and metadata addresses on every redirect hop.
+- **AI is bring-your-own-key**: each user stores an OpenAI-compatible key
+  (Gemini, Groq, OpenRouter, …), encrypted in `ai_credentials`. In production a
+  user without a key gets no AI (messages are sent without the summary); the
+  platform `NVIDIA_*` key is used for these automations only outside
+  production. Standup summaries keep using the platform key.
+- **Retention** (daily, `/api/cron/maintenance`): step payloads after 30 days,
+  finished runs after 30 days (failed ones after 90), events after 30 days, form
+  submissions after 90 days (the Google Sheet is the permanent record), quota
+  counters after 8 days and cron history after 30 days.
+
+Pages: **Notifications** (`/notifications`) for channels, rules and delivery
+history; **Uptime monitors** (`/notifications/uptime`); **Settings →
+Connections** (`/settings/connections`) for Telegram, Google, the AI key and
+today's free-tier usage.
+
 ## Roles and access control
 
 New users always get role `USER`; the role cannot be chosen in the app. Grant
@@ -417,6 +480,72 @@ Create an API key at <https://build.nvidia.com> and set `NVIDIA_API_KEY`.
 (plus optional file names/line counts and the user's note) are sent — never
 source code — and only from the server.
 
+## Telegram bot setup
+
+1. In Telegram, message **@BotFather** → `/newbot`. Copy the token into
+   `TELEGRAM_BOT_TOKEN` and the bot's username (without `@`) into
+   `TELEGRAM_BOT_USERNAME`.
+2. Generate a webhook secret with `openssl rand -hex 32` and set it as
+   `TELEGRAM_WEBHOOK_SECRET`.
+3. Deploy, then register the webhook and the command menu:
+
+   ```bash
+   npm run telegram:set-webhook                            # uses NEXT_PUBLIC_APP_URL
+   npm run telegram:set-webhook -- https://abc.ngrok.app   # local tunnel
+   npm run telegram:set-webhook -- --delete                # remove it
+   ```
+
+   (`pnpm run telegram:set-webhook` works the same way.) Telegram then sends
+   `X-Telegram-Bot-Api-Secret-Token` on every update, and
+   `/api/webhooks/telegram` rejects anything without it.
+4. Users press **Connect Telegram**, which opens
+   `https://t.me/<bot>?start=<token>`. The token is single-use, expires after
+   15 minutes, and only its SHA-256 is stored. Commands: `/start`, `/stop`
+   (unlink), `/digest`, `/help`.
+
+## Connect Google setup (Sheets and Gmail)
+
+"Connect Google" is separate from sign-in and reuses the same OAuth client.
+
+1. Google Cloud console → **APIs & Services → Library**: enable **Google
+   Sheets API** and **Gmail API**.
+2. **OAuth consent screen → Data access**: add `.../auth/drive.file` and
+   `.../auth/gmail.send`. Never add `gmail.readonly`, `gmail.modify`,
+   `gmail.compose`, `drive` or `drive.readonly`: those are restricted scopes
+   that require a paid security assessment.
+3. **Credentials → your OAuth client**: add the redirect URI
+   `${NEXT_PUBLIC_APP_URL}/api/integrations/google/callback`.
+4. `gmail.send` is a *sensitive* scope. Until Google verifies the app (free,
+   but it needs a privacy policy, a demo video and a verified domain), only
+   listed test users can connect, up to 100, and they see an "unverified app"
+   warning. Start verification before launch.
+
+Refresh tokens are stored encrypted. GreenGrid creates its own spreadsheets
+(so `drive.file` covers them) and appends rows with `valueInputOption=RAW`, so
+submitted text can never run as a formula.
+
+## GitHub App webhook setup
+
+The GitHub App used to connect GitHub also delivers repository events for the
+notification hub.
+
+1. GitHub → **Settings → Developer settings → GitHub Apps → your app**.
+2. **Webhook**: active, URL `${NEXT_PUBLIC_APP_URL}/api/webhooks/github`,
+   secret = `GITHUB_WEBHOOK_SECRET` (`openssl rand -hex 32`).
+3. **Permissions → Repository**: add read access to **Pull requests**,
+   **Checks** and **Issues** (Contents and Metadata are already granted).
+   Existing installations must accept the new permissions.
+4. **Subscribe to events**: Pull request, Check suite, Release, Issues.
+5. Users install the App on their repositories (the hub page links to it).
+   Each installation is routed to the GreenGrid user whose connected GitHub
+   account installed it. **Refresh** on the hub page links installations made
+   before the webhook was enabled.
+
+Supported events: `pull_request.opened`, `pull_request.review_requested`,
+`check_suite.completed` with a failing conclusion, `release.published` and
+`issues.opened`. Signatures (`X-Hub-Signature-256`) are verified in constant
+time over the raw body, and `X-GitHub-Delivery` de-duplicates redeliveries.
+
 ## Upgrading an existing GreenGrid deployment
 
 The `20260930000000_standup_automations` migration:
@@ -481,16 +610,20 @@ the offending keys and never their values.
 | Variable                      | Required | Purpose                                                                 |
 | ----------------------------- | :------: | ----------------------------------------------------------------------- |
 | `NEXT_PUBLIC_APP_URL`         |    ✅    | Public origin; OAuth redirect URIs and the CSRF origin check.           |
-| `DATABASE_URL`                |    ✅    | PostgreSQL connection string.                                           |
+| `DATABASE_URL`                |    ✅    | PostgreSQL connection string. On Neon, use the pooled (`-pooler`) host. |
+| `DATABASE_POOL_MAX`           |    —     | Connections per serverless instance (default 3).                        |
 | `AUTH_SECRET`                 |    ✅    | Auth.js secret.                                                         |
 | `GOOGLE_CLIENT_ID` / `_SECRET`|    ✅    | Google OAuth client.                                                    |
 | `GITHUB_CLIENT_ID` / `_SECRET`|    ✅    | GitHub App (or OAuth App) credentials.                                  |
 | `GITHUB_APP_SLUG`             |    —     | Enables the "Manage repository access" link.                            |
+| `GITHUB_WEBHOOK_SECRET`       |    —     | Enables GitHub notifications (`/api/webhooks/github`).                  |
+| `TELEGRAM_BOT_TOKEN` / `_BOT_USERNAME` / `_WEBHOOK_SECRET` | — | Telegram bot for the notification hub. |
+| `QUOTA_*`                     |    —     | Override the daily free-tier caps (see `.env.example`).                 |
 | `SLACK_CLIENT_ID` / `_SECRET` |  Slack   | Slack app credentials. Without them, Slack features are disabled.       |
 | `SLACK_SIGNING_SECRET`        |    —     | Enables the signed Events endpoint.                                     |
 | `SLACK_BOT_SCOPES`            |    —     | Comma-separated; sensible defaults when empty.                          |
 | `SLACK_USER_SCOPES`           |    —     | "Post as me" scopes (sensible default); `none` disables it.             |
-| `NVIDIA_API_KEY`              |    AI    | Required to generate summaries.                                         |
+| `NVIDIA_API_KEY`              |    AI    | Standup summaries; hub automations use it only outside production.      |
 | `NVIDIA_BASE_URL` / `NVIDIA_MODEL` | — | Default to the NVIDIA endpoint and Nemotron 3 Super.                    |
 | `CRON_SECRET`                 |    ✅    | Bearer secret for `/api/cron/*`.                                        |
 | `ENCRYPTION_KEY`              |    ✅    | Base64 of **32 random bytes**; AES-256-GCM key for tokens at rest. (`GITHUB_TOKEN_ENCRYPTION_KEY` accepted for existing deployments.) |
@@ -530,10 +663,22 @@ one it applies `20260930000000_standup_automations` (see
 The scheduler is entirely external — GreenGrid never relies on an in-process
 `setTimeout` or `setInterval`, so it works on serverless platforms.
 
-**Endpoints:** `POST /api/cron/standups` (standup automations) and
-`POST /api/cron/activity` (commit-activity schedules). `GET` is accepted too,
-for schedulers such as Vercel Cron that only issue GETs. The shipped GitHub
-Actions workflow calls both every 15 minutes.
+**Endpoints:** `POST /api/cron/standups` (standup automations),
+`POST /api/cron/activity` (commit-activity schedules), `POST /api/cron/instagram`
+(Instagram retries and token refresh), `POST /api/cron/hub` (notification hub
+deliveries, retries and uptime checks) and `POST /api/cron/maintenance` (daily
+TLS checks and data retention; it does nothing if it already ran in the last 20
+hours). `GET` is accepted too, for schedulers such as Vercel Cron that only
+issue GETs. The shipped GitHub Actions workflow calls all of them every 15 minutes.
+
+When a hub tick runs out of its 45-second budget with work left, it triggers
+itself again (at most 3 follow-ups per tick) instead of waiting 15 minutes.
+
+> **Free-tier note:** on a *private* repository each scheduled GitHub Actions
+> run bills at least one minute, so a 15-minute schedule uses about 2,900 of
+> the 2,000 free minutes a month. Make the repository public, or call the same
+> endpoints from a free external scheduler such as cron-job.org. The endpoints
+> are idempotent, so running both is harmless.
 
 `/api/cron/standups` processes due automations with bounded concurrency inside
 a 45-second budget; anything not reached is picked up on the next tick, which

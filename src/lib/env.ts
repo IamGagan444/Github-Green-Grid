@@ -200,6 +200,66 @@ export function getAiConfig(): AiConfig {
   };
 }
 
+/** True when no production deployment would use this process (dev and test). */
+export function isNonProductionRuntime(): boolean {
+  return process.env.NODE_ENV !== "production";
+}
+
+/** The platform AI key, or null. Used for new automations only outside production. */
+export function getPlatformAiConfig(): AiConfig | null {
+  try {
+    return getAiConfig();
+  } catch (error) {
+    if (error instanceof ConfigurationError) return null;
+    throw error;
+  }
+}
+
+export interface TelegramConfig {
+  botToken: string;
+  /** Without the leading @. */
+  botUsername: string;
+  /** Echoed by Telegram in X-Telegram-Bot-Api-Secret-Token on every webhook call. */
+  webhookSecret: string;
+}
+
+export function getTelegramConfig(): TelegramConfig {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN?.trim();
+  const botUsername = process.env.TELEGRAM_BOT_USERNAME?.trim().replace(/^@/, "");
+  const webhookSecret = process.env.TELEGRAM_WEBHOOK_SECRET?.trim();
+  const missing = [
+    ...(botToken ? [] : ["TELEGRAM_BOT_TOKEN"]),
+    ...(botUsername ? [] : ["TELEGRAM_BOT_USERNAME"]),
+    ...(webhookSecret ? [] : ["TELEGRAM_WEBHOOK_SECRET"]),
+  ];
+  if (!botToken || !botUsername || !webhookSecret) throw new ConfigurationError("Telegram", missing);
+  return { botToken, botUsername, webhookSecret };
+}
+
+/** Secret configured on the GitHub App's webhook; verifies X-Hub-Signature-256. */
+export function getGitHubWebhookSecret(): string {
+  const secret = process.env.GITHUB_WEBHOOK_SECRET?.trim();
+  if (!secret) throw new ConfigurationError("GitHub webhook", ["GITHUB_WEBHOOK_SECRET"]);
+  return secret;
+}
+
+function positiveInt(raw: string | undefined, fallback: number): number {
+  const value = Number(raw);
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+/** Daily caps on shared free-tier quotas. Overridable for self-hosters. */
+export function getQuotaCaps() {
+  return {
+    YOUTUBE_UNITS: {
+      user: positiveInt(process.env.QUOTA_YOUTUBE_UNITS_PER_USER, 200),
+      global: positiveInt(process.env.QUOTA_YOUTUBE_UNITS_GLOBAL, 9_000),
+    },
+    EMAILS: { user: positiveInt(process.env.QUOTA_EMAILS_PER_USER, 100), global: null },
+    TELEGRAM_MESSAGES: { user: positiveInt(process.env.QUOTA_TELEGRAM_PER_USER, 300), global: null },
+  } as const;
+}
+
 /** Presence (never values) of each configurable area, for the admin system page. */
 export function getConfigurationStatus(): Record<string, boolean> {
   const has = (key: string) => Boolean(process.env[key]?.trim());
@@ -214,6 +274,8 @@ export function getConfigurationStatus(): Record<string, boolean> {
     instagramApp: has("INSTAGRAM_APP_ID") && has("INSTAGRAM_APP_SECRET"),
     instagramWebhook: has("INSTAGRAM_WEBHOOK_VERIFY_TOKEN"),
     nvidiaApi: has("NVIDIA_API_KEY"),
+    telegramBot: has("TELEGRAM_BOT_TOKEN") && has("TELEGRAM_BOT_USERNAME") && has("TELEGRAM_WEBHOOK_SECRET"),
+    githubWebhook: has("GITHUB_WEBHOOK_SECRET"),
     cronSecret: has("CRON_SECRET"),
     encryptionKey: has("ENCRYPTION_KEY") || has("GITHUB_TOKEN_ENCRYPTION_KEY"),
     distributedRateLimit: has("UPSTASH_REDIS_REST_URL") && has("UPSTASH_REDIS_REST_TOKEN"),

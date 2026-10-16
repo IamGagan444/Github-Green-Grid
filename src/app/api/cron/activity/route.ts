@@ -17,10 +17,16 @@ interface CronSummary {
   successful: number;
   failed: number;
   skipped: number;
+  /** Due slots not reached before the time budget; the next tick runs them. */
+  deferred: number;
 }
+
+/** Leave headroom under the 60s function limit. */
+const TIME_BUDGET_MS = 45_000;
 
 async function processDueSchedules(): Promise<CronSummary> {
   const now = new Date();
+  const deadline = now.getTime() + TIME_BUDGET_MS;
 
   const schedules = await prisma.schedule.findMany({
     where: {
@@ -37,12 +43,16 @@ async function processDueSchedules(): Promise<CronSummary> {
     },
   });
 
-  const summary: CronSummary = { processed: 0, successful: 0, failed: 0, skipped: 0 };
+  const summary: CronSummary = { processed: 0, successful: 0, failed: 0, skipped: 0, deferred: 0 };
 
   for (const schedule of schedules) {
     // A schedule can have several slots due at once if a poll was missed.
     // Already-executed slots are rejected by the idempotency key, not re-run.
     for (const due of getDueOccurrences(schedule, now)) {
+      if (Date.now() >= deadline) {
+        summary.deferred += 1;
+        continue;
+      }
       summary.processed += 1;
 
       // Each slot is isolated: one user's failure never aborts the batch.

@@ -1,11 +1,14 @@
 import {
   Activity,
+  BellRing,
   Bot,
   CalendarClock,
   FolderGit2,
   History,
   LayoutDashboard,
   MessageCircle,
+  Plug,
+  Radar,
   Settings,
   ShieldCheck,
 } from "lucide-react";
@@ -38,6 +41,13 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [{ href: "/instagram", label: "Auto-DM automations", icon: MessageCircle }],
   },
   {
+    label: "Notifications",
+    items: [
+      { href: "/notifications", label: "Notification hub", icon: BellRing },
+      { href: "/notifications/uptime", label: "Uptime monitors", icon: Radar },
+    ],
+  },
+  {
     label: "Commit activity",
     items: [
       { href: "/dashboard/schedule", label: "Schedule", icon: CalendarClock },
@@ -46,7 +56,10 @@ export const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
-    items: [{ href: "/settings", label: "Settings", icon: Settings }],
+    items: [
+      { href: "/settings/connections", label: "Connections", icon: Plug },
+      { href: "/settings", label: "Settings", icon: Settings },
+    ],
   },
 ];
 
@@ -67,5 +80,8 @@ export const MOBILE_NAV_ITEMS: NavItem[] = [
 /** Exact match for the overview route, prefix match for everything else. */
 export function isNavItemActive(pathname: string, href: string): boolean {
   if (href === "/dashboard") return pathname === "/dashboard";
+  // Parent sections whose children have their own nav entries.
+  if (href === "/settings") return pathname === "/settings";
+  if (href === "/notifications") return pathname === "/notifications" || pathname.startsWith("/notifications/runs");
   return pathname === href || pathname.startsWith(href + "/");
 }

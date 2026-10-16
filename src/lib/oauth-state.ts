@@ -13,7 +13,7 @@ import { isProduction } from "@/lib/env";
  * forged callback cannot attach an attacker's GitHub/Slack account to a victim.
  */
 
-export type OAuthProvider = "github" | "slack" | "instagram";
+export type OAuthProvider = "github" | "slack" | "instagram" | "google" | "linkedin";
 
 const STATE_TTL_SECONDS = 600;
 

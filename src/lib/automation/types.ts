@@ -150,6 +150,8 @@ export interface SlackPort {
     text: string;
     threadTs?: string;
     metadata: SlackMessageMetadata;
+    /** Block Kit layout; `text` stays the notification fallback. */
+    blocks?: unknown[];
   }): Promise<{ ts: string }>;
   permalink(channelId: string, ts: string): Promise<string | null>;
 }
