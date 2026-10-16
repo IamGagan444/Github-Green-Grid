@@ -47,8 +47,8 @@ export type InstagramAutomationView = Awaited<ReturnType<typeof listInstagramAut
 
 /** Owner-only. Anything else is NOT_FOUND so ids cannot be probed. */
 export async function getInstagramAutomation(actor: Actor, id: string): Promise<InstagramAutomationView> {
-  const automation = await prisma.instagramAutomation.findUnique({ where: { id }, select: automationSelect });
-  if (!automation || automation.userId !== actor.userId) throw new AuthorizationError("NOT_FOUND");
+  const automation = await prisma.instagramAutomation.findFirst({ where: { id, userId: actor.userId }, select: automationSelect });
+  if (!automation) throw new AuthorizationError("NOT_FOUND");
   return automation;
 }
 

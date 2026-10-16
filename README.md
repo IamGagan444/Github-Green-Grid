@@ -611,7 +611,7 @@ the offending keys and never their values.
 | ----------------------------- | :------: | ----------------------------------------------------------------------- |
 | `NEXT_PUBLIC_APP_URL`         |    ✅    | Public origin; OAuth redirect URIs and the CSRF origin check.           |
 | `DATABASE_URL`                |    ✅    | PostgreSQL connection string. On Neon, use the pooled (`-pooler`) host. |
-| `DATABASE_POOL_MAX`           |    —     | Connections per serverless instance (default 3).                        |
+| `DATABASE_POOL_MAX`           |    —     | Connections per serverless instance (default 5).                        |
 | `AUTH_SECRET`                 |    ✅    | Auth.js secret.                                                         |
 | `GOOGLE_CLIENT_ID` / `_SECRET`|    ✅    | Google OAuth client.                                                    |
 | `GITHUB_CLIENT_ID` / `_SECRET`|    ✅    | GitHub App (or OAuth App) credentials.                                  |
@@ -861,35 +861,74 @@ Slack and placed into an application-built template. Commit messages and the
 user's note are passed to the model as delimited data with an instruction to
 ignore instructions inside them.
 
-**Webhooks.** `/api/webhooks/slack/events` verifies the Slack v0 HMAC signature
-over the raw body and rejects requests older than five minutes.
+**Webhooks.** Every webhook verifies its signature over the raw body, in
+constant time, before parsing: Slack (v0 HMAC, timestamp within five minutes),
+Meta/Instagram and GitHub (`X-Hub-Signature-256`), Telegram (secret token
+header). Bodies are size-capped while streaming. Redeliveries are absorbed by
+unique database keys (`gh:<X-GitHub-Delivery>`, Instagram event keys).
 
 **Authorization / IDOR.** Every route resolves the user from the session and
-scopes each query by `userId`. A schedule or repository belonging to someone else
+scopes each query by `userId` — the owner is part of the `where` clause
+(`ownerScope()` in `lib/rbac`), not a check after loading the row. Cross-user
+tests cover automations, executions, Instagram automations and integrations,
+Slack workspaces, and hub channels, rules, monitors and runs. A schedule or repository belonging to someone else
 returns `404`, never `403`, so ids cannot be probed. Client-supplied ids are
 never trusted as ownership proof.
 
 **Input validation.** Zod validates every request body and query string on the
-server. Client-side validation is a convenience only. Commit messages are
+server. API JSON bodies are capped at 64 KB (413 otherwise) and unknown keys are
+rejected (`.strict()`). Client-side validation is a convenience only. Commit messages are
 restricted to one control-character-free line, and the activity path must be a
 relative `.json` path with no `..` traversal.
 
-**Rate limiting.** `lib/rate-limit.ts` protects repository refresh, schedule
-create/update/delete, manual runs (5 per 5 minutes), settings and auth start.
-Redis-backed when Upstash credentials are present; otherwise an in-memory
-limiter suitable for a single development instance.
+**Rate limiting.** `lib/rate-limit.ts` is a sliding-window limiter (one atomic
+Upstash `EVAL` per check; an in-memory version of the same algorithm when Redis
+is absent or unreachable). It protects sign-in and the OAuth callback (per IP),
+every Server Action and mutating route (per user), AI-calling routes, and every
+webhook (per IP). Blocked API responses are `429` with `Retry-After`. The client
+IP comes from Vercel's `x-real-ip`, which callers cannot forge.
 
 **Environment handling.** `lib/env.ts` parses the environment through Zod and
 lists only the *names* of invalid keys in its error. Server-only modules import
 `server-only`, so a stray client import is a build error rather than a leak.
 
-**Response headers.** `next.config.ts` sets `X-Content-Type-Options: nosniff`,
-`X-Frame-Options: DENY`, a strict `Referrer-Policy`, and a restrictive
-`Permissions-Policy`.
+**Response headers.** `src/proxy.ts` sends a nonce-based
+`Content-Security-Policy` on every page: scripts run only with the per-request
+nonce (`'strict-dynamic'`, no `'unsafe-inline'` or `'unsafe-eval'` in
+production), `frame-ancestors 'none'`, `object-src 'none'`, `base-uri 'self'`.
+`next.config.ts` adds `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+a strict `Referrer-Policy`, a restrictive `Permissions-Policy`, and Vercel adds
+HSTS. Production source maps are not published.
 
-**Known advisory.** `npm audit` reports a high-severity advisory in
-`deepmerge-ts`, reached only through `@prisma/config` — a Prisma **CLI**
-dependency used at build/migration time. It is not part of the deployed runtime.
+**Logs.** The structured logger redacts credential-shaped keys, known token
+formats (Slack, GitHub, Google, Telegram, Discord webhooks, AI keys, our own
+ciphertext), email addresses and phone numbers. API errors never include stack
+traces or provider payloads.
+
+**Dependencies.** CI (`.github/workflows/ci.yml`) fails on any high or critical
+advisory in production dependencies (`npm audit --omit=dev`). Remaining
+advisories are in ESLint tooling only (`braces`/`micromatch` through
+`eslint-config-next`), which never ships to the browser or the server.
+
+**Caching.** `lib/cache/cache.ts` caches only slow third-party reads (GitHub
+repositories and branches, Slack channels, Instagram media pages; 5-minute TTL).
+Keys are versioned and user-scoped (`gg:v1:u:<userId>:…`), enforced at runtime,
+and include the connection time so reconnecting starts clean. Tokens are never
+cached. Database queries are not cached in Redis: from the Singapore functions
+Neon answers in milliseconds, faster than a Redis round trip.
+
+**Rotating secrets.**
+
+| Secret | How to rotate | Effect |
+| --- | --- | --- |
+| `CRON_SECRET` | Generate (`openssl rand -base64 32`), update Vercel and the GitHub Actions / cron-job.org secret together | Scheduler calls with the old value get 401 until updated |
+| `AUTH_SECRET` | Generate, update Vercel, redeploy | Sessions are database records, so users stay signed in |
+| `TELEGRAM_WEBHOOK_SECRET` | Update the variable, redeploy, run `npm run telegram:set-webhook` | Telegram is re-registered with the new secret |
+| `GITHUB_WEBHOOK_SECRET` / `SLACK_SIGNING_SECRET` / `INSTAGRAM_APP_SECRET` | Rotate in the provider, then update Vercel immediately | Deliveries fail signature checks in between (providers retry) |
+| `ENCRYPTION_KEY` | No re-encryption tool yet: changing it makes stored tokens unreadable | Every user must reconnect their integrations |
+
+Use different values for production, preview and local development; secrets
+shorter than 32 characters log a warning at startup.
 
 ## Contribution rules disclaimer
 

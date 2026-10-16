@@ -16,7 +16,15 @@ vi.mock("@/lib/db", () => ({
       update: (...args: unknown[]) => automationUpdate(...args),
       delete: (...args: unknown[]) => automationDelete(...args),
     },
-    execution: { findUnique: (...args: unknown[]) => executionFindUnique(...args) },
+    execution: {
+      findUnique: (...args: unknown[]) => executionFindUnique(...args),
+      // Mimics Postgres: the stored row is returned only when it matches the scoped filter.
+      findFirst: async (args: { where: { id: string; userId?: string } }) => {
+        const row = (await executionFindUnique(args)) as { id: string; userId: string } | null;
+        if (!row || row.id !== args.where.id) return null;
+        return args.where.userId === undefined || row.userId === args.where.userId ? row : null;
+      },
+    },
     auditLog: { create: vi.fn() },
   },
 }));
@@ -62,9 +70,10 @@ const ALICE_AUTOMATION = {
   executions: [],
 };
 
-/** Mimics Postgres: findFirst honours the { id, userId } filter. */
-function scopedFindFirst(args: { where: { id: string; userId: string } }) {
-  return args.where.id === ALICE_AUTOMATION.id && args.where.userId === ALICE_AUTOMATION.userId ? ALICE_AUTOMATION : null;
+/** Mimics Postgres: findFirst honours the { id, userId } filter (no userId = admin scope). */
+function scopedFindFirst(args: { where: { id: string; userId?: string } }) {
+  if (args.where.id !== ALICE_AUTOMATION.id) return null;
+  return args.where.userId === undefined || args.where.userId === ALICE_AUTOMATION.userId ? ALICE_AUTOMATION : null;
 }
 
 beforeEach(() => {

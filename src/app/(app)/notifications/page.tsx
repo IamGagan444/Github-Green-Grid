@@ -14,7 +14,8 @@ import {
   testChannelAction,
   toggleRuleAction,
 } from "@/app/actions/hub";
-import { ActionForm, CheckboxField, NativeSelect } from "@/components/hub/action-form";
+import { ActionForm, CheckboxField } from "@/components/hub/action-form";
+import { SlackChannelPicker, WhenOpened } from "@/components/hub/slack-channel-picker";
 import { Header } from "@/components/layout/header";
 import { ConfirmAction } from "@/components/settings/confirm-action";
 import { RunStatusBadge } from "@/components/status/status-badges";
@@ -35,30 +36,15 @@ import { getGitHubIntegration } from "@/services/github-service";
 import { listGitHubInstallations } from "@/services/github-webhook-service";
 import { getGoogleIntegration } from "@/services/google-service";
 import { listRecentRuns, listRules } from "@/services/notification-service";
-import { listWorkspaceChannels, listSlackIntegrations } from "@/services/slack-service";
+import { listSlackIntegrations } from "@/services/slack-service";
 import { listMonitors } from "@/services/uptime-service";
 
 export const metadata: Metadata = { title: "Notifications" };
 export const dynamic = "force-dynamic";
 
-async function slackChannelOptions(userId: string) {
-  const workspaces = (await listSlackIntegrations(userId)).filter((workspace) => workspace.status === "CONNECTED");
-  const groups = await Promise.all(
-    workspaces.map(async (workspace) => {
-      try {
-        const channels = await listWorkspaceChannels(userId, workspace.id, "BOT");
-        return { workspace, channels: channels.filter((channel) => !channel.isPrivate || channel.isMember).slice(0, 200) };
-      } catch {
-        return { workspace, channels: [] };
-      }
-    }),
-  );
-  return groups.filter((group) => group.channels.length > 0);
-}
-
 export default async function NotificationsPage() {
   const user = await requireUser("notification:manage:own");
-  const [preferences, channels, rules, runs, monitors, github, installations, google, slackGroups] = await Promise.all([
+  const [preferences, channels, rules, runs, monitors, github, installations, google, slackWorkspaces] = await Promise.all([
     prisma.user.findUnique({ where: { id: user.userId }, select: { defaultTimezone: true } }),
     listChannels(user.userId),
     listRules(user.userId),
@@ -67,11 +53,14 @@ export default async function NotificationsPage() {
     getGitHubIntegration(user.userId),
     listGitHubInstallations(user.userId),
     getGoogleIntegration(user.userId),
-    slackChannelOptions(user.userId),
+    listSlackIntegrations(user.userId),
   ]);
   const timezone = preferences?.defaultTimezone ?? "UTC";
   const verifiedChannels = channels.filter((channel) => channel.verified);
   const githubAppSlug = process.env.GITHUB_APP_SLUG?.trim();
+  const connectedWorkspaces = slackWorkspaces
+    .filter((workspace) => workspace.status === "CONNECTED")
+    .map((workspace) => ({ id: workspace.id, teamName: workspace.teamName }));
 
   return (
     <>
@@ -308,26 +297,15 @@ export default async function NotificationsPage() {
 
               <details className="rounded-md border border-border p-3">
                 <summary className="cursor-pointer text-sm font-medium">Add a Slack channel</summary>
-                {slackGroups.length === 0 ? (
+                {connectedWorkspaces.length === 0 ? (
                   <p className="mt-3 text-xs text-muted-foreground">
                     <Link href="/settings#integrations" className="underline">Connect Slack</Link> first.
                   </p>
                 ) : (
                   <ActionForm action={addSlackChannelAction} submitLabel="Add Slack channel" pendingLabel="Checking…" resetOnSuccess className="mt-3">
-                    <NativeSelect name="target" required aria-label="Slack channel" defaultValue="">
-                      <option value="" disabled>
-                        Pick a channel
-                      </option>
-                      {slackGroups.map((group) => (
-                        <optgroup key={group.workspace.id} label={group.workspace.teamName}>
-                          {group.channels.map((channel) => (
-                            <option key={channel.id} value={`${group.workspace.id}:${channel.id}`}>
-                              #{channel.name}
-                            </option>
-                          ))}
-                        </optgroup>
-                      ))}
-                    </NativeSelect>
+                    <WhenOpened>
+                      <SlackChannelPicker workspaces={connectedWorkspaces} />
+                    </WhenOpened>
                   </ActionForm>
                 )}
               </details>

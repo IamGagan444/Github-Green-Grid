@@ -165,7 +165,7 @@ export const executionQuerySchema = z.object({
   status: z.enum(["ALL", "RUNNING", "SUCCESS", "FAILED", "SKIPPED"]).optional().default("ALL"),
   automationId: z.string().min(1).max(40).optional(),
   page: z.coerce.number().int().min(1).max(10_000).optional().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).optional().default(25),
+  pageSize: z.coerce.number().int().min(1).max(50).optional().default(20),
 });
 
 export type ExecutionQuery = z.infer<typeof executionQuerySchema>;

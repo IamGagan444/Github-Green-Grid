@@ -17,6 +17,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   account_disabled: "Your account has been disabled. Contact an administrator if you think this is a mistake.",
   email_unverified: "Your Google account email must be verified to sign in.",
   provider_not_allowed: "Only Google sign-in is supported.",
+  rate_limited: "Too many sign-in attempts. Wait a minute and try again.",
   AccessDenied: "Access was denied. Your account may be disabled.",
   OAuthSignin: "Could not start Google sign-in. Please try again.",
   OAuthCallback: "Google sign-in could not be completed. Please try again.",

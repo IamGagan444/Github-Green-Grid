@@ -68,7 +68,7 @@ export const createScheduleSchema = z.object({
   daysOfWeek: daysOfWeekSchema,
   commitMessage: commitMessageSchema.optional(),
   activityPath: activityPathSchema.optional(),
-});
+}).strict();
 
 export const updateScheduleSchema = z
   .object({
@@ -80,15 +80,20 @@ export const updateScheduleSchema = z
     commitMessage: commitMessageSchema.optional(),
     activityPath: activityPathSchema.optional(),
   })
+  .strict()
   .refine((value) => Object.keys(value).length > 0, "Nothing to update.");
 
-export const selectRepositorySchema = z.object({
-  githubRepositoryId: z.string().min(1),
-});
+export const selectRepositorySchema = z
+  .object({
+    githubRepositoryId: z.string().min(1).max(40),
+  })
+  .strict();
 
-export const manualRunSchema = z.object({
-  scheduleId: z.string().min(1),
-});
+export const manualRunSchema = z
+  .object({
+    scheduleId: z.string().min(1).max(40),
+  })
+  .strict();
 
 export const settingsSchema = z
   .object({
@@ -109,7 +114,7 @@ export const activityQuerySchema = z.object({
   from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   page: z.coerce.number().int().min(1).optional().default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).optional().default(25),
+  pageSize: z.coerce.number().int().min(1).max(50).optional().default(20),
 });
 
 export type CreateScheduleInput = z.infer<typeof createScheduleSchema>;

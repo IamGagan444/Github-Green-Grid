@@ -1,12 +1,12 @@
 import { after, NextResponse, type NextRequest } from "next/server";
 
-import { clientIp } from "@/lib/api";
+import { clientIp, readBodyText } from "@/lib/api";
 import { safeCompare } from "@/lib/encryption";
 import { getInstagramConfig } from "@/lib/env";
 import { verifyMetaSignature } from "@/lib/instagram/signature";
 import { normaliseWebhook, webhookEnvelopeSchema } from "@/lib/instagram/webhook";
 import { createLogger } from "@/lib/logging/logger";
-import { rateLimit, RATE_LIMITS } from "@/lib/rate-limit";
+import { rateLimit, rateLimitHeaders, RATE_LIMITS } from "@/lib/rate-limit";
 import { ingestInstagramEvents, runInstagramEvents } from "@/services/instagram-event-service";
 import { isInstagramConfigured } from "@/services/instagram-service";
 
@@ -42,13 +42,13 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   const limit = await rateLimit(`instagram-webhook:${clientIp(request)}`, RATE_LIMITS.instagramWebhook);
-  if (!limit.success) return NextResponse.json({ ok: false }, { status: 429 });
+  if (!limit.success) return NextResponse.json({ ok: false }, { status: 429, headers: rateLimitHeaders(limit) });
 
   if (!isInstagramConfigured()) return NextResponse.json({ ok: false }, { status: 503 });
   const { appSecret } = getInstagramConfig();
 
-  const rawBody = await request.text();
-  if (rawBody.length > MAX_BODY_BYTES) return NextResponse.json({ ok: false }, { status: 413 });
+  const rawBody = await readBodyText(request, MAX_BODY_BYTES).catch(() => null);
+  if (rawBody === null) return NextResponse.json({ ok: false }, { status: 413 });
 
   const valid = verifyMetaSignature({
     appSecret,

@@ -40,16 +40,13 @@ export async function getUserDashboard(userId: string, timezone: string, now: Da
   const weekAgo = new Date(now.getTime() - WEEK_MS);
 
   const [
-    standupTotal,
-    standupActive,
+    standupByStatus,
     standupToday,
     standupRecent,
-    instagramTotal,
-    instagramActive,
+    instagramByStatus,
     instagramWeek,
     instagramRecent,
-    scheduleTotal,
-    scheduleEnabled,
+    scheduleByEnabled,
     commitsWeek,
     commitRecent,
     github,
@@ -63,8 +60,8 @@ export async function getUserDashboard(userId: string, timezone: string, now: Da
     google,
     aiKey,
   ] = await Promise.all([
-    prisma.automation.count({ where: { userId } }),
-    prisma.automation.count({ where: { userId, status: "ACTIVE" } }),
+    // One grouped count per product instead of separate total/active queries.
+    prisma.automation.groupBy({ by: ["status"], where: { userId }, orderBy: { status: "asc" }, _count: { _all: true } }),
     prisma.execution.groupBy({
       by: ["status"],
       where: { userId, executionDate: today },
@@ -86,8 +83,7 @@ export async function getUserDashboard(userId: string, timezone: string, now: Da
         slackChannelName: true,
       },
     }),
-    prisma.instagramAutomation.count({ where: { userId } }),
-    prisma.instagramAutomation.count({ where: { userId, status: "ACTIVE" } }),
+    prisma.instagramAutomation.groupBy({ by: ["status"], where: { userId }, orderBy: { status: "asc" }, _count: { _all: true } }),
     prisma.instagramEvent.groupBy({
       by: ["status"],
       where: { integration: { userId }, type: { not: "POSTBACK" }, createdAt: { gte: weekAgo } },
@@ -108,8 +104,7 @@ export async function getUserDashboard(userId: string, timezone: string, now: Da
         automation: { select: { id: true, name: true } },
       },
     }),
-    prisma.schedule.count({ where: { userId } }),
-    prisma.schedule.count({ where: { userId, enabled: true } }),
+    prisma.schedule.groupBy({ by: ["enabled"], where: { userId }, orderBy: { enabled: "asc" }, _count: { _all: true } }),
     prisma.activityExecution.count({ where: { userId, status: "COMPLETED", executedAt: { gte: weekAgo } } }),
     prisma.activityExecution.findMany({
       where: { userId, executedAt: { not: null } },
@@ -144,6 +139,15 @@ export async function getUserDashboard(userId: string, timezone: string, now: Da
     rows
       .filter((row) => status === undefined || row.status === status)
       .reduce((sum, row) => sum + (row._count?._all ?? 0), 0);
+
+  const standupTotal = count(standupByStatus);
+  const standupActive = count(standupByStatus, "ACTIVE");
+  const instagramTotal = count(instagramByStatus);
+  const instagramActive = count(instagramByStatus, "ACTIVE");
+  const scheduleTotal = scheduleByEnabled.reduce((sum, row) => sum + (row._count?._all ?? 0), 0);
+  const scheduleEnabled = scheduleByEnabled
+    .filter((row) => row.enabled)
+    .reduce((sum, row) => sum + (row._count?._all ?? 0), 0);
 
   const slackConnected = slack.some((workspace) => workspace.status === "CONNECTED");
   const instagramConnected = instagram.some((account) => account.status === "CONNECTED");

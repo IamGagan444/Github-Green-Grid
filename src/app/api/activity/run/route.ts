@@ -24,6 +24,8 @@ export async function POST(request: NextRequest) {
       throw new ApiError(
         "RATE_LIMITED",
         "You've run activity a few times recently. Try again in a few minutes.",
+        undefined,
+        { retryAfterSeconds: limit.retryAfterSeconds ?? 1 },
       );
     }
 

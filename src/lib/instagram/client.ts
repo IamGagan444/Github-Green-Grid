@@ -161,7 +161,22 @@ export interface InstagramMedia {
   timestamp: string;
 }
 
-export async function listMedia(token: string, limit = 24): Promise<InstagramMedia[]> {
+/** Graph API page cursors are opaque base64-like strings. */
+export const MEDIA_CURSOR_PATTERN = /^[A-Za-z0-9_=-]{1,512}$/;
+export const MEDIA_PAGE_SIZE = 10;
+
+export interface MediaPage {
+  items: InstagramMedia[];
+  /** Pass back as `after` for the next page; null on the last page. */
+  nextCursor: string | null;
+}
+
+/**
+ * One page of the account's posts and reels, newest first. Only the fields the
+ * picker renders are requested (`media_url` is the thumbnail for images).
+ */
+export async function listMedia(token: string, options: { after?: string | null; limit?: number } = {}): Promise<MediaPage> {
+  const after = options.after && MEDIA_CURSOR_PATTERN.test(options.after) ? options.after : undefined;
   const data = await callGraph<{
     data: Array<{
       id: string;
@@ -173,20 +188,27 @@ export async function listMedia(token: string, limit = 24): Promise<InstagramMed
       permalink?: string;
       timestamp: string;
     }>;
+    paging?: { cursors?: { after?: string }; next?: string };
   }>("me/media", token, {
     query: {
       fields: "id,caption,media_type,media_product_type,media_url,thumbnail_url,permalink,timestamp",
-      limit,
+      limit: Math.min(Math.max(options.limit ?? MEDIA_PAGE_SIZE, 1), 50),
+      after,
     },
   });
-  return data.data.map((item) => ({
-    id: item.id,
-    caption: item.caption ?? null,
-    mediaType: item.media_type,
-    productType: item.media_product_type ?? null,
-    // Videos and reels expose a thumbnail; images only a media_url.
-    thumbnailUrl: item.thumbnail_url ?? (item.media_type === "VIDEO" ? null : item.media_url ?? null),
-    permalink: item.permalink ?? null,
-    timestamp: item.timestamp,
-  }));
+  const cursor = data.paging?.cursors?.after;
+  return {
+    items: data.data.map((item) => ({
+      id: item.id,
+      caption: item.caption ?? null,
+      mediaType: item.media_type,
+      productType: item.media_product_type ?? null,
+      // Videos and reels expose a thumbnail; images only a media_url.
+      thumbnailUrl: item.thumbnail_url ?? (item.media_type === "VIDEO" ? null : item.media_url ?? null),
+      permalink: item.permalink ?? null,
+      timestamp: item.timestamp,
+    })),
+    // Graph returns a cursor even on the last page; `paging.next` says whether more exist.
+    nextCursor: data.paging?.next && cursor && MEDIA_CURSOR_PATTERN.test(cursor) ? cursor : null,
+  };
 }

@@ -14,7 +14,7 @@ import { InstagramIcon } from "@/components/icons/instagram-icon";
 import { SlackIcon } from "@/components/icons/slack-icon";
 import { Header } from "@/components/layout/header";
 import { ConfirmAction } from "@/components/settings/confirm-action";
-import { SettingsForm } from "@/components/settings/settings-form";
+import { LazySettingsForm } from "@/components/settings/lazy-settings-form";
 import { IntegrationBadge } from "@/components/status/status-badges";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -325,7 +325,7 @@ export default async function SettingsPage() {
           </Card>
 
           {/* Defaults */}
-          <SettingsForm
+          <LazySettingsForm
             timezones={listSupportedTimezones()}
             defaultValues={{
               defaultTimezone: preferences.defaultTimezone,

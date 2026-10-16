@@ -10,7 +10,7 @@ import { PrismaClient } from "@/generated/prisma/client";
  * one small pool.
  *
  * Serverless instances multiply connections, so the pool is kept small
- * (DATABASE_POOL_MAX, default 3). On Neon, point DATABASE_URL at the pooled
+ * (DATABASE_POOL_MAX, default 5). On Neon, point DATABASE_URL at the pooled
  * ("-pooler") host so PgBouncer absorbs bursts.
  */
 
@@ -20,7 +20,8 @@ const globalForPrisma = globalThis as unknown as {
 
 function poolMax(): number {
   const value = Number(process.env.DATABASE_POOL_MAX);
-  return Number.isInteger(value) && value > 0 && value <= 50 ? value : 3;
+  // 5 lets a page's parallel queries run in a single wave or two; Neon's pooler absorbs many instances.
+  return Number.isInteger(value) && value > 0 && value <= 50 ? value : 5;
 }
 
 function createClient(): PrismaClient {

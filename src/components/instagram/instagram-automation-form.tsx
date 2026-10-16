@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { AtSign, Check, Loader2, MessageCircle, MessagesSquare, RefreshCw, Reply } from "lucide-react";
 import { toast } from "sonner";
 
@@ -392,6 +392,16 @@ function fieldErrors(error: unknown): Record<string, string> {
   return result;
 }
 
+interface MediaPage {
+  items: MediaItem[];
+  nextCursor: string | null;
+}
+
+/**
+ * Posts and reels, 10 at a time. The next page loads when the end of the grid
+ * scrolls into view (with a "Load more" button as fallback). Selection lives
+ * in the form, so it survives paging and refreshes.
+ */
 function MediaPicker({
   integrationId,
   selected,
@@ -402,26 +412,47 @@ function MediaPicker({
   onChange: (ids: string[]) => void;
 }) {
   const queryClient = useQueryClient();
-  const mediaUrl = `/api/instagram/media?integrationId=${encodeURIComponent(integrationId)}`;
-  const mediaQuery = useQuery({
+  const baseUrl = `/api/instagram/media?integrationId=${encodeURIComponent(integrationId)}`;
+  const mediaQuery = useInfiniteQuery({
     queryKey: queryKeys.instagramMedia(integrationId),
-    queryFn: () => apiFetch<{ media: MediaItem[] }>(mediaUrl),
+    queryFn: ({ pageParam }) =>
+      apiFetch<MediaPage>(pageParam ? `${baseUrl}&cursor=${encodeURIComponent(pageParam)}` : baseUrl),
+    initialPageParam: null as string | null,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
     enabled: Boolean(integrationId),
-    select: (data) => data.media,
   });
-  // The server caches the list; ?refresh=1 bypasses that cache and re-primes it.
-  function refresh() {
-    void queryClient.fetchQuery({
-      queryKey: queryKeys.instagramMedia(integrationId),
-      queryFn: () => apiFetch<{ media: MediaItem[] }>(`${mediaUrl}&refresh=1`),
-      staleTime: 0,
-    });
+  const { fetchNextPage, hasNextPage, isFetchingNextPage } = mediaQuery;
+
+  // The server caches each page; ?refresh=1 re-primes the first page, then the list restarts from it.
+  async function refresh() {
+    await apiFetch<MediaPage>(`${baseUrl}&refresh=1`).catch(() => undefined);
+    await queryClient.resetQueries({ queryKey: queryKeys.instagramMedia(integrationId) });
   }
-  const media = mediaQuery.data ?? null;
-  const loading = mediaQuery.isFetching;
+
+  const sentinel = React.useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    const node = sentinel.current;
+    if (!node || !hasNextPage || typeof IntersectionObserver === "undefined") return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting) && !isFetchingNextPage) void fetchNextPage();
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [fetchNextPage, hasNextPage, isFetchingNextPage]);
+
+  const media = mediaQuery.data ? mediaQuery.data.pages.flatMap((page) => page.items) : null;
+  const loading = mediaQuery.isFetching && !isFetchingNextPage;
 
   const toggle = (id: string) =>
     onChange(selected.includes(id) ? selected.filter((value) => value !== id) : [...selected, id]);
+
+  const skeletons = (count: number) =>
+    Array.from({ length: count }, (_, index) => (
+      <div key={`skeleton-${index}`} className="aspect-square animate-pulse rounded-md bg-secondary" />
+    ));
 
   return (
     <div className="flex flex-col gap-2">
@@ -429,58 +460,75 @@ function MediaPicker({
         <p className="text-xs text-muted-foreground">
           {selected.length === 0 ? "Choose one or more posts." : `${selected.length} selected`}
         </p>
-        <Button type="button" variant="ghost" size="sm" onClick={refresh} disabled={loading}>
+        <Button type="button" variant="ghost" size="sm" onClick={() => void refresh()} disabled={loading}>
           <RefreshCw className={cn(loading && "animate-spin")} aria-hidden="true" />
           Refresh
         </Button>
       </div>
-      {mediaQuery.error ? (
+      {mediaQuery.error && !media ? (
         <p className="text-sm text-destructive">{messageFor(mediaQuery.error)}</p>
       ) : media === null ? (
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
-          {Array.from({ length: 6 }, (_, index) => (
-            <div key={index} className="aspect-square animate-pulse rounded-md bg-secondary" />
-          ))}
-        </div>
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">{skeletons(6)}</div>
       ) : media.length === 0 ? (
         <p className="text-sm text-muted-foreground">No posts found on this account.</p>
       ) : (
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
-          {media.map((item) => {
-            const isSelected = selected.includes(item.id);
-            return (
-              <button
-                key={item.id}
-                type="button"
-                aria-pressed={isSelected}
-                title={item.caption ?? undefined}
-                onClick={() => toggle(item.id)}
-                className={cn(
-                  "relative aspect-square overflow-hidden rounded-md border-2 bg-secondary",
-                  isSelected ? "border-primary" : "border-transparent",
-                )}
-              >
-                {item.thumbnailUrl ? (
-                  // Instagram CDN URLs are signed and short-lived; next/image would cache them.
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={item.thumbnailUrl} alt={item.caption?.slice(0, 80) ?? "Instagram post"} className="size-full object-cover" />
-                ) : (
-                  <span className="flex size-full items-center justify-center p-1 text-[10px] text-muted-foreground">
-                    {item.caption?.slice(0, 40) ?? item.mediaType}
-                  </span>
-                )}
-                {item.productType === "REELS" ? (
-                  <span className="absolute left-1 top-1 rounded bg-black/60 px-1 text-[10px] text-white">Reel</span>
-                ) : null}
-                {isSelected ? (
-                  <span className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                    <Check className="size-3" aria-hidden="true" />
-                  </span>
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
+        <>
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-6">
+            {media.map((item) => {
+              const isSelected = selected.includes(item.id);
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  aria-pressed={isSelected}
+                  title={item.caption ?? undefined}
+                  onClick={() => toggle(item.id)}
+                  className={cn(
+                    "relative aspect-square overflow-hidden rounded-md border-2 bg-secondary",
+                    isSelected ? "border-primary" : "border-transparent",
+                  )}
+                >
+                  {item.thumbnailUrl ? (
+                    // Instagram CDN URLs are signed and short-lived; next/image would cache them.
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={item.thumbnailUrl}
+                      alt={item.caption?.slice(0, 80) ?? "Instagram post"}
+                      loading="lazy"
+                      decoding="async"
+                      width={160}
+                      height={160}
+                      className="size-full object-cover"
+                    />
+                  ) : (
+                    <span className="flex size-full items-center justify-center p-1 text-[10px] text-muted-foreground">
+                      {item.caption?.slice(0, 40) ?? item.mediaType}
+                    </span>
+                  )}
+                  {item.productType === "REELS" ? (
+                    <span className="absolute left-1 top-1 rounded bg-black/60 px-1 text-[10px] text-white">Reel</span>
+                  ) : null}
+                  {isSelected ? (
+                    <span className="absolute right-1 top-1 flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                      <Check className="size-3" aria-hidden="true" />
+                    </span>
+                  ) : null}
+                </button>
+              );
+            })}
+            {isFetchingNextPage ? skeletons(4) : null}
+          </div>
+          {mediaQuery.isFetchNextPageError ? (
+            <p className="text-sm text-destructive">{messageFor(mediaQuery.error)}</p>
+          ) : null}
+          {hasNextPage ? (
+            <div ref={sentinel} className="flex justify-center">
+              <Button type="button" variant="outline" size="sm" onClick={() => void fetchNextPage()} disabled={isFetchingNextPage}>
+                {isFetchingNextPage ? "Loading…" : "Load more"}
+              </Button>
+            </div>
+          ) : null}
+        </>
       )}
     </div>
   );

@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
 
     const limit = await rateLimit(`repos:${user.userId}`, RATE_LIMITS.repositories);
     if (!limit.success) {
-      throw new ApiError("RATE_LIMITED", "Too many refreshes. Try again shortly.");
+      throw new ApiError("RATE_LIMITED", "Too many refreshes. Try again shortly.", undefined, { retryAfterSeconds: limit.retryAfterSeconds ?? 1 });
     }
 
     const repositories = await syncRepositories(user.userId);
@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
 
     const limit = await rateLimit(`repos:select:${user.userId}`, RATE_LIMITS.scheduleWrite);
     if (!limit.success) {
-      throw new ApiError("RATE_LIMITED", "Too many requests. Try again shortly.");
+      throw new ApiError("RATE_LIMITED", "Too many requests. Try again shortly.", undefined, { retryAfterSeconds: limit.retryAfterSeconds ?? 1 });
     }
 
     const body = await readJson(request, selectRepositorySchema);

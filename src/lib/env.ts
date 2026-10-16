@@ -63,8 +63,21 @@ export function getEnv(): ServerEnv {
   }
 
   cached = parsed.data;
+  if (cached.CRON_SECRET.length < RECOMMENDED_SECRET_LENGTH) {
+    // Not fatal, so an existing deployment keeps running until the secret is rotated.
+    console.warn(
+      JSON.stringify({
+        level: "warn",
+        scope: "env",
+        message: `CRON_SECRET is shorter than ${RECOMMENDED_SECRET_LENGTH} characters; rotate it (openssl rand -base64 32).`,
+      }),
+    );
+  }
   return cached;
 }
+
+/** Secrets shorter than this trigger a startup warning. */
+export const RECOMMENDED_SECRET_LENGTH = 32;
 
 export function getAppUrl(): string {
   return getEnv().NEXT_PUBLIC_APP_URL.replace(/\/$/, "");
