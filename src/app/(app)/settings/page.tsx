@@ -60,6 +60,19 @@ const AUDIT_LABELS: Record<string, string> = {
   AUTOMATION_TESTED: "Tested an automation",
   AUTOMATION_EXECUTED: "Ran an automation",
   AUTOMATION_FAILED: "Automation run failed",
+  TELEGRAM_CONNECTED: "Connected a Telegram chat",
+  TELEGRAM_DISCONNECTED: "Disconnected a Telegram chat",
+  GOOGLE_CONNECTED: "Connected Google",
+  GOOGLE_DISCONNECTED: "Disconnected Google",
+  CHANNEL_CREATED: "Added a notification channel",
+  CHANNEL_DELETED: "Removed a notification channel",
+  RULE_CREATED: "Created a notification rule",
+  RULE_UPDATED: "Updated a notification rule",
+  RULE_DELETED: "Deleted a notification rule",
+  AI_KEY_SAVED: "Saved an AI key",
+  AI_KEY_DELETED: "Removed the AI key",
+  MONITOR_CREATED: "Added an uptime monitor",
+  MONITOR_DELETED: "Deleted an uptime monitor",
 };
 
 export default async function SettingsPage() {
@@ -139,7 +152,12 @@ export default async function SettingsPage() {
               <CardTitle>Integrations</CardTitle>
               <CardDescription>
                 Tokens are encrypted with AES-256-GCM and never shown or sent to your browser. Disconnecting keeps your
-                automations and history; automations pause until you reconnect.
+                automations and history; automations pause until you reconnect. Telegram, Google (Sheets and Gmail) and
+                your AI key live in{" "}
+                <a href="/settings/connections" className="underline">
+                  Connections
+                </a>
+                .
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col divide-y divide-border pt-0">

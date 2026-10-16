@@ -30,23 +30,43 @@ model User {
   updatedAt     DateTime   @updatedAt
 
   // Automation defaults, applied when creating new schedules and automations.
-  defaultTimezone      String      @default("UTC")
-  defaultCommitMessage String      @default("chore: update GreenGrid activity")
-  defaultScheduleTime  String      @default("17:00")
-  defaultDaysOfWeek    Weekday[]   @default([MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY])
+  defaultTimezone      String       @default("UTC")
+  defaultCommitMessage String       @default("chore: update GreenGrid activity")
+  defaultScheduleTime  String       @default("17:00")
+  defaultDaysOfWeek    Weekday[]    @default([MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY])
   defaultMessageStyle  MessageStyle @default(CONCISE)
 
-  accounts            Account[]
-  sessions            Session[]
-  githubIntegration   GitHubIntegration?
-  slackIntegrations   SlackIntegration[]
+  accounts              Account[]
+  sessions              Session[]
+  githubIntegration     GitHubIntegration?
+  slackIntegrations     SlackIntegration[]
   instagramIntegrations InstagramIntegration[]
   instagramAutomations  InstagramAutomation[]
-  repositories        Repository[]
-  schedules           Schedule[]
-  automations         Automation[]
-  executions          Execution[]
-  auditLogs           AuditLog[]         @relation("AuditActor")
+  repositories          Repository[]
+  schedules             Schedule[]
+  automations           Automation[]
+  executions            Execution[]
+  auditLogs             AuditLog[]             @relation("AuditActor")
+
+  // Notification hub and the automations built on it.
+  notificationChannels NotificationChannel[]
+  notificationRules    NotificationRule[]
+  notificationEvents   NotificationEvent[]
+  workflowRuns         WorkflowRun[]
+  telegramLinkTokens   TelegramLinkToken[]
+  githubInstallations  GitHubInstallation[]
+  googleIntegration    GoogleIntegration?
+  linkedinIntegration  LinkedInIntegration?
+  aiCredential         AiCredential?
+  uptimeMonitors       UptimeMonitor[]
+  forms                Form[]
+  formSubmissions      FormSubmission[]
+  receivables          Receivable[]
+  reminderSettings     ReminderSettings?
+  digestSettings       DigestSettings?
+  digestSources        DigestSource[]
+  crossPostSources     CrossPostSource[]
+  crossPostItems       CrossPostItem[]
 
   @@index([status])
   @@index([role])
@@ -124,25 +144,25 @@ model SlackIntegration {
   id     String @id @default(cuid())
   userId String
 
-  teamId     String
-  teamName   String
-  teamDomain String?
-  appId      String?
+  teamId       String
+  teamName     String
+  teamDomain   String?
+  appId        String?
   // Slack user who authorised the install.
   authedUserId String
   botUserId    String?
   status       IntegrationStatus @default(CONNECTED)
 
   // AES-256-GCM ciphertext. Never leaves the server. Cleared on disconnect.
-  botTokenEncrypted          String?
-  botRefreshTokenEncrypted   String?
-  botTokenExpiresAt          DateTime?
-  botScopes                  String[]  @default([])
+  botTokenEncrypted         String?
+  botRefreshTokenEncrypted  String?
+  botTokenExpiresAt         DateTime?
+  botScopes                 String[]  @default([])
   // Present only when the user granted user scopes ("Post as me").
-  userTokenEncrypted         String?
-  userRefreshTokenEncrypted  String?
-  userTokenExpiresAt         DateTime?
-  userScopes                 String[]  @default([])
+  userTokenEncrypted        String?
+  userRefreshTokenEncrypted String?
+  userTokenExpiresAt        DateTime?
+  userScopes                String[]  @default([])
 
   connectedAt    DateTime  @default(now())
   disconnectedAt DateTime?
@@ -192,18 +212,18 @@ model Repository {
 }
 
 model Schedule {
-  id           String  @id @default(cuid())
+  id           String @id @default(cuid())
   userId       String
   repositoryId String
 
-  enabled       Boolean  @default(false)
-  timezone      String   @default("UTC")
+  enabled       Boolean   @default(false)
+  timezone      String    @default("UTC")
   // 1-20. Commits are spread one per hour across the local day; the exact
   // slot times are derived, never chosen by the user. See lib/schedule/slots.ts.
-  commitsPerDay Int      @default(1)
+  commitsPerDay Int       @default(1)
   daysOfWeek    Weekday[]
-  commitMessage String   @default("chore: update GreenGrid activity")
-  activityPath  String   @default(".greengrid/activity.json")
+  commitMessage String    @default("chore: update GreenGrid activity")
+  activityPath  String    @default(".greengrid/activity.json")
 
   lastRunAt DateTime?
 
@@ -221,7 +241,7 @@ model Schedule {
 }
 
 model ActivityExecution {
-  id           String @id @default(cuid())
+  id           String  @id @default(cuid())
   scheduleId   String?
   repositoryId String
   userId       String
@@ -232,18 +252,18 @@ model ActivityExecution {
   // "<scheduleId>:<scheduledDay>:<slotIndex>" for cron runs, NULL for manual runs.
   // A unique index makes duplicate scheduled execution impossible at the DB level;
   // Postgres allows many NULLs, so manual runs are never blocked.
-  idempotencyKey String? @unique
-  scheduledFor DateTime
-  executedAt   DateTime?
-  durationMs   Int?
+  idempotencyKey String?   @unique
+  scheduledFor   DateTime
+  executedAt     DateTime?
+  durationMs     Int?
 
-  status       ExecutionStatus @default(PENDING)
-  trigger      ExecutionTrigger @default(SCHEDULED)
-  commitSha    String?
-  commitUrl    String?
+  status        ExecutionStatus  @default(PENDING)
+  trigger       ExecutionTrigger @default(SCHEDULED)
+  commitSha     String?
+  commitUrl     String?
   commitMessage String?
-  errorCode    String?
-  errorMessage String?
+  errorCode     String?
+  errorMessage  String?
 
   createdAt DateTime @default(now())
 
@@ -262,10 +282,10 @@ model ActivityExecution {
 // ─────────────────────────────────────────────────────────────────────────────
 
 model Automation {
-  id     String           @id @default(cuid())
-  userId String
-  name   String
-  status AutomationStatus @default(ACTIVE)
+  id             String           @id @default(cuid())
+  userId         String
+  name           String
+  status         AutomationStatus @default(ACTIVE)
   // Set when an admin disables the automation; the owner cannot resume it.
   disabledReason String?
 
@@ -312,27 +332,27 @@ model Automation {
 }
 
 model Execution {
-  id           String  @id @default(cuid())
+  id             String  @id @default(cuid())
   // Nullable so history survives automation deletion.
-  automationId String?
-  userId       String
+  automationId   String?
+  userId         String
   // Snapshot so history remains readable after the automation is renamed or deleted.
   automationName String
 
   // Local calendar day in the automation timezone, "YYYY-MM-DD".
-  executionDate String
+  executionDate  String
   // "HH:MM" for a scheduled time, "manual-<epochMs>" for Run now. Null on rows
   // created before multiple times per day existed.
-  slot          String?
+  slot           String?
   // "<automationId>:<executionDate>:<slot>". Unique: one Slack update per slot.
-  idempotencyKey String          @unique
+  idempotencyKey String     @unique
   // Commits summarised by this execution, [windowStart, windowEnd). Fixed when
   // the execution is created so a retry summarises exactly the same range.
   windowStart    DateTime?
   windowEnd      DateTime?
-  trigger        RunTrigger      @default(SCHEDULED)
-  status         RunStatus       @default(RUNNING)
-  attempt        Int             @default(1)
+  trigger        RunTrigger @default(SCHEDULED)
+  status         RunStatus  @default(RUNNING)
+  attempt        Int        @default(1)
   // Lease held by the worker processing this execution. A RUNNING row whose
   // lease has expired is considered abandoned and may be resumed.
   leaseExpiresAt DateTime?
@@ -384,16 +404,16 @@ model Execution {
 /// One parent message per Slack channel per local day. The unique constraint
 /// stops two automations (or two workers) from creating duplicate date headers.
 model SlackThreadAnchor {
-  id         String    @id @default(cuid())
-  teamId     String
-  channelId  String
-  dateKey    String
+  id        String   @id @default(cuid())
+  teamId    String
+  channelId String
+  dateKey   String
   // Distinguishes header styles so a date header and an AI parent never collide.
-  anchorKey  String
-  parentTs   String?
-  claimedAt  DateTime  @default(now())
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  anchorKey String
+  parentTs  String?
+  claimedAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@unique([teamId, channelId, dateKey, anchorKey])
   @@index([createdAt])
@@ -535,6 +555,565 @@ model InstagramEvent {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Notification hub: event in → rules → message out on free channels
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// A place GreenGrid can deliver a message to. `configEncrypted` is AES-256-GCM
+/// ciphertext of a JSON object validated per kind (lib/hub/channel-config.ts):
+/// a Telegram chat id, a Discord webhook URL (itself a secret), a Slack
+/// integration + channel, or an email address.
+model NotificationChannel {
+  id     String      @id @default(cuid())
+  userId String
+  kind   ChannelKind
+  label  String
+
+  configEncrypted String
+  // HMAC of the provider-side identity (Telegram chat id, webhook URL, …) so a
+  // channel can be found and de-duplicated without decrypting every row.
+  externalRef     String
+  verified        Boolean   @default(false)
+  verifiedAt      DateTime?
+  lastError       String?
+  lastDeliveredAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targets NotificationRuleTarget[]
+
+  @@unique([userId, kind, externalRef])
+  @@index([userId])
+  @@index([kind, externalRef])
+  @@map("notification_channels")
+}
+
+model NotificationRule {
+  id      String             @id @default(cuid())
+  userId  String
+  name    String
+  source  NotificationSource
+  // Validated per source (lib/hub/rules.ts), e.g. { events: [...], repositories: [...] }.
+  filter  Json
+  enabled Boolean            @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user    User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  targets NotificationRuleTarget[]
+
+  @@index([userId, source, enabled])
+  @@map("notification_rules")
+}
+
+model NotificationRuleTarget {
+  ruleId    String
+  channelId String
+
+  rule    NotificationRule    @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  channel NotificationChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+
+  @@id([ruleId, channelId])
+  @@index([channelId])
+  @@map("notification_rule_targets")
+}
+
+/// Inbox for everything that can trigger a notification. The raw provider
+/// payload is never stored: `data` is a small normalised object.
+model NotificationEvent {
+  id             String             @id @default(cuid())
+  userId         String
+  source         NotificationSource
+  // e.g. "pull_request.opened", "uptime.down".
+  type           String
+  // "gh:<delivery>" | "uptime:<monitor>:<state>:<at>" | … Unique: redeliveries are absorbed.
+  idempotencyKey String             @unique
+  data           Json
+  occurredAt     DateTime           @default(now())
+  // Set once one WorkflowRun per matching rule exists. Null rows are swept by the cron.
+  fannedOutAt    DateTime?
+  createdAt      DateTime           @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([fannedOutAt, createdAt])
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("notification_events")
+}
+
+/// One unit of work for the generic workflow engine (lib/workflow). Claimed
+/// with a lease, retried with backoff; every step is recorded separately.
+model WorkflowRun {
+  id             String       @id @default(cuid())
+  userId         String
+  kind           WorkflowKind
+  // "notify:<eventId>:<ruleId>" | "reminder:<receivableId>:<date>" | …
+  idempotencyKey String       @unique
+  // What the run is about, for per-object history ("NotificationEvent", "Form", …).
+  subjectType    String?
+  subjectId      String?
+  title          String
+  // Small kind-specific input (ids, not content).
+  input          Json?
+
+  status         RunStatus  @default(RUNNING)
+  trigger        RunTrigger @default(SCHEDULED)
+  attempt        Int        @default(0)
+  leaseExpiresAt DateTime?
+  nextRetryAt    DateTime?
+
+  scheduledFor DateTime?
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  durationMs   Int?
+  errorCode    String?
+  errorMessage String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  steps WorkflowStep[]
+
+  @@index([status, nextRetryAt])
+  @@index([userId, createdAt])
+  @@index([subjectType, subjectId])
+  @@index([createdAt])
+  @@map("workflow_runs")
+}
+
+model WorkflowStep {
+  id             String             @id @default(cuid())
+  runId          String
+  // Stable within the run: "notify:<channelId>", "sheet.append", "publish:linkedin".
+  key            String
+  // Globally unique, e.g. "notify:<eventId>:<ruleId>:<channelId>".
+  idempotencyKey String             @unique
+  position       Int                @default(0)
+  semantics      DeliverySemantics  @default(AT_LEAST_ONCE)
+  status         WorkflowStepStatus @default(PENDING)
+  attempt        Int                @default(0)
+  // Input needed to (re)execute the step. Cleared once the step succeeds and
+  // by the retention job after 30 days.
+  payload        Json?
+  // Provider references (message id, post URN, row range). Never content.
+  result         Json?
+  externalId     String?
+  errorCode      String?
+  errorMessage   String?
+  startedAt      DateTime?
+  completedAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  run WorkflowRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@unique([runId, key])
+  @@index([createdAt])
+  @@map("workflow_steps")
+}
+
+/// Single-use, 15-minute token behind the "Connect Telegram" deep link.
+model TelegramLinkToken {
+  id         String    @id @default(cuid())
+  userId     String
+  // SHA-256 of the token; the raw token only exists in the t.me link.
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("telegram_link_tokens")
+}
+
+/// A GitHub App installation. Webhook deliveries carry the installation id,
+/// which routes the event to the GreenGrid user who installed the App.
+model GitHubInstallation {
+  id                  String    @id @default(cuid())
+  installationId      String    @unique
+  userId              String?
+  accountId           String
+  accountLogin        String
+  accountType         String
+  repositorySelection String?
+  suspendedAt         DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([accountId])
+  @@map("github_installations")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Integrations used by the hub automations
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Google connection for Sheets (drive.file) and Gmail (gmail.send). Separate
+/// from sign-in: sign-in never stores Google tokens.
+model GoogleIntegration {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  googleSub String
+  email     String
+  status    IntegrationStatus @default(CONNECTED)
+
+  // AES-256-GCM ciphertext. Cleared on disconnect.
+  refreshTokenEncrypted String?
+  accessTokenEncrypted  String?
+  tokenExpiresAt        DateTime?
+  scopes                String[]  @default([])
+
+  connectedAt    DateTime  @default(now())
+  disconnectedAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("google_integrations")
+}
+
+/// "Share on LinkedIn" (w_member_social). LinkedIn issues no refresh token to
+/// self-serve apps, so the 60-day token is replaced by reconnecting.
+model LinkedInIntegration {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  // OIDC `sub`; the post author is urn:li:person:<memberSub>.
+  memberSub String
+  name      String?
+  status    IntegrationStatus @default(CONNECTED)
+
+  accessTokenEncrypted String?
+  tokenExpiresAt       DateTime?
+  expiryWarnedAt       DateTime?
+  scopes               String[]  @default([])
+
+  connectedAt    DateTime  @default(now())
+  disconnectedAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, tokenExpiresAt])
+  @@map("linkedin_integrations")
+}
+
+/// Bring-your-own-key AI: any OpenAI-compatible endpoint.
+model AiCredential {
+  id     String @id @default(cuid())
+  userId String @unique
+
+  label          String
+  baseUrl        String
+  model          String
+  keyEncrypted   String
+  lastVerifiedAt DateTime?
+  lastError      String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("ai_credentials")
+}
+
+model UptimeMonitor {
+  id      String  @id @default(cuid())
+  userId  String
+  url     String
+  label   String
+  enabled Boolean @default(true)
+
+  state               MonitorState @default(UNKNOWN)
+  consecutiveFailures Int          @default(0)
+  lastCheckedAt       DateTime?
+  nextCheckAt         DateTime     @default(now())
+  lastStatusCode      Int?
+  lastLatencyMs       Int?
+  lastError           String?
+  lastChangeAt        DateTime?
+
+  // TLS certificate expiry, checked daily for https URLs.
+  tlsExpiresAt  DateTime?
+  tlsCheckedAt  DateTime?
+  // Smallest threshold already alerted for the current certificate (14, then 3).
+  tlsAlertLevel Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([enabled, nextCheckAt])
+  @@index([userId])
+  @@map("uptime_monitors")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Form → Google Sheet → alert
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Form {
+  id              String           @id @default(cuid())
+  userId          String
+  // Random, unguessable id used in the public URL /f/<publicId>.
+  publicId        String           @unique
+  name            String
+  status          AutomationStatus @default(ACTIVE)
+  // Validated array of { id, label, type, required, options? } (validators/form.ts).
+  fields          Json
+  thankYouMessage String           @default("Thanks! We received your response.")
+
+  spreadsheetId String?
+  sheetUrl      String?
+
+  // Optional acknowledgement email to the submitter, sent from the owner's Gmail.
+  ackEnabled     Boolean  @default(false)
+  ackSubject     String?
+  ackBody        String?
+  // Origins allowed to POST from the owner's own site. Empty = any origin.
+  allowedOrigins String[] @default([])
+
+  submissionCount Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  submissions FormSubmission[]
+
+  @@index([userId])
+  @@map("forms")
+}
+
+model FormSubmission {
+  id        String   @id @default(cuid())
+  formId    String
+  userId    String
+  data      Json
+  // HMAC of the client IP: enough for abuse limits, not reversible.
+  ipHash    String?
+  createdAt DateTime @default(now())
+
+  form Form @relation(fields: [formId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([formId, createdAt])
+  @@index([createdAt])
+  @@map("form_submissions")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Payment and invoice reminders
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Receivable {
+  id           String           @id @default(cuid())
+  userId       String
+  customerName String
+  email        String?
+  // E.164, e.g. +919876543210.
+  phone        String?
+  // Minor units (paise, cents). Never a float.
+  amountMinor  Int
+  currency     String           @default("INR")
+  // Local calendar day in the owner's reminder timezone, "YYYY-MM-DD".
+  dueDate      String
+  note         String?
+  status       ReceivableStatus @default(OPEN)
+  paymentLink  String?
+
+  intervalDays   Int       @default(3)
+  maxReminders   Int       @default(3)
+  remindersSent  Int       @default(0)
+  // Next local day a reminder is due; null once the schedule is exhausted.
+  nextReminderOn String?
+  lastRemindedAt DateTime?
+  paidAt         DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextReminderOn])
+  @@index([userId, status])
+  @@map("receivables")
+}
+
+model ReminderSettings {
+  id            String  @id @default(cuid())
+  userId        String  @unique
+  enabled       Boolean @default(true)
+  timezone      String  @default("Asia/Kolkata")
+  // Local hour (0–23) reminders go out.
+  hour          Int     @default(10)
+  upiId         String?
+  payeeName     String?
+  emailSubject  String  @default("Payment reminder: {amount} due {dueDate}")
+  emailTemplate String  @default("Hi {name},\n\nThis is a friendly reminder that {amount} is due on {dueDate}.\n\nThank you!")
+  // Local day the last batch ran, so each day runs once.
+  lastRunDate   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("reminder_settings")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI morning digest
+// ─────────────────────────────────────────────────────────────────────────────
+
+model DigestSettings {
+  id            String    @id @default(cuid())
+  userId        String    @unique
+  enabled       Boolean   @default(true)
+  timezone      String    @default("UTC")
+  daysOfWeek    Weekday[] @default([MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY, SUNDAY])
+  scheduleTimes String[]  @default(["08:00"])
+  maxItems      Int       @default(30)
+  lastRunDate   String?
+  lastRunAt     DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("digest_settings")
+}
+
+model DigestSource {
+  id      String           @id @default(cuid())
+  userId  String
+  kind    DigestSourceKind
+  label   String
+  // { url } | { channelId, handle? } | { owner, repo } | { topN }
+  config  Json
+  enabled Boolean          @default(true)
+
+  // Conditional GET state.
+  etag              String?
+  lastModified      String?
+  // Resolved once for YOUTUBE_CHANNEL sources.
+  resolvedChannelId String?
+  // Hashes of items already delivered (newest 300).
+  seenKeys          String[]  @default([])
+  lastFetchedAt     DateTime?
+  failureCount      Int       @default(0)
+  lastError         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, enabled])
+  @@map("digest_sources")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Cross-poster
+// ─────────────────────────────────────────────────────────────────────────────
+
+model CrossPostSource {
+  id      String              @id @default(cuid())
+  userId  String
+  kind    CrossPostSourceKind
+  label   String
+  config  Json
+  mode    CrossPostMode       @default(APPROVAL)
+  // Validated array of targets (validators/crosspost.ts).
+  targets Json
+  enabled Boolean             @default(true)
+
+  etag              String?
+  lastModified      String?
+  resolvedChannelId String?
+  uploadsPlaylistId String?
+  // Items published before this instant are never posted (no backlog flood).
+  baselineAt        DateTime  @default(now())
+  lastPolledAt      DateTime?
+  nextPollAt        DateTime  @default(now())
+  failureCount      Int       @default(0)
+  lastError         String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user  User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  items CrossPostItem[]
+
+  @@index([enabled, nextPollAt])
+  @@index([userId])
+  @@map("crosspost_sources")
+}
+
+model CrossPostItem {
+  id                String              @id @default(cuid())
+  sourceId          String
+  userId            String
+  // Video id or feed guid.
+  externalId        String
+  title             String
+  url               String
+  publishedAt       DateTime?
+  status            CrossPostItemStatus @default(NEW)
+  // { LINKEDIN: "...", TELEGRAM_CHANNEL: "...", DISCORD: "..." }
+  drafts            Json?
+  approvedAt        DateTime?
+  approvalMessageId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  source CrossPostSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  user   User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceId, externalId])
+  @@index([userId, createdAt])
+  @@index([status])
+  @@map("crosspost_items")
+}
+
+/// Daily usage of shared free-tier quotas. `subject` is a user id or "global".
+/// Reservations are compare-and-swap increments, so caps hold under concurrency.
+model QuotaUsage {
+  id      String     @id @default(cuid())
+  scope   QuotaScope
+  subject String
+  // "YYYY-MM-DD" in the quota's reset timezone (Pacific for YouTube).
+  day     String
+  used    Int        @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([scope, subject, day])
+  @@index([day])
+  @@map("quota_usage")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Audit & operations
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -665,6 +1244,111 @@ enum AuditAction {
   AUTOMATION_EXECUTED
   AUTOMATION_FAILED
   ADMIN_ACTION
+  TELEGRAM_CONNECTED
+  TELEGRAM_DISCONNECTED
+  GOOGLE_CONNECTED
+  GOOGLE_DISCONNECTED
+  GOOGLE_REVOKED
+  LINKEDIN_CONNECTED
+  LINKEDIN_DISCONNECTED
+  LINKEDIN_REVOKED
+  CHANNEL_CREATED
+  CHANNEL_DELETED
+  RULE_CREATED
+  RULE_UPDATED
+  RULE_DELETED
+  AI_KEY_SAVED
+  AI_KEY_DELETED
+  MONITOR_CREATED
+  MONITOR_DELETED
+}
+
+enum ChannelKind {
+  TELEGRAM
+  DISCORD_WEBHOOK
+  SLACK
+  EMAIL
+}
+
+enum NotificationSource {
+  GITHUB
+  FORM
+  PAYMENT
+  UPTIME
+  DIGEST
+  REMINDER
+  CROSSPOST
+}
+
+enum WorkflowKind {
+  NOTIFY
+  FORM_SUBMISSION
+  REMINDER
+  DIGEST
+  CROSSPOST_DRAFT
+  CROSSPOST_PUBLISH
+}
+
+enum WorkflowStepStatus {
+  PENDING
+  // The side effect was attempted and its outcome is not yet recorded.
+  IN_FLIGHT
+  SUCCESS
+  FAILED
+  SKIPPED
+  // An AT_MOST_ONCE step crashed mid-flight: it may or may not have happened,
+  // so it is never retried automatically.
+  UNKNOWN
+}
+
+enum DeliverySemantics {
+  AT_LEAST_ONCE
+  AT_MOST_ONCE
+}
+
+enum MonitorState {
+  UNKNOWN
+  UP
+  DOWN
+}
+
+enum ReceivableStatus {
+  OPEN
+  PAID
+  CANCELLED
+}
+
+enum DigestSourceKind {
+  RSS
+  YOUTUBE_CHANNEL
+  GITHUB_RELEASES
+  HACKER_NEWS
+}
+
+enum CrossPostSourceKind {
+  YOUTUBE
+  RSS
+}
+
+enum CrossPostMode {
+  APPROVAL
+  AUTO
+}
+
+enum CrossPostItemStatus {
+  NEW
+  AWAITING_APPROVAL
+  APPROVED
+  PUBLISHED
+  PARTIAL
+  REJECTED
+  FAILED
+}
+
+enum QuotaScope {
+  YOUTUBE_UNITS
+  EMAILS
+  TELEGRAM_MESSAGES
 }
 
 enum Weekday {

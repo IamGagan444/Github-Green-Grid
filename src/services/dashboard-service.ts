@@ -3,13 +3,14 @@ import "server-only";
 import { localDayKey } from "@/lib/automation/schedule";
 import { prisma } from "@/lib/db";
 import { getGitHubIntegration } from "@/services/github-service";
+import { getGoogleIntegration } from "@/services/google-service";
 import { listInstagramIntegrations } from "@/services/instagram-service";
 import { listSlackIntegrations } from "@/services/slack-service";
 
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const FEED_SIZE = 10;
 
-export type ActivityKind = "STANDUP" | "INSTAGRAM" | "COMMIT";
+export type ActivityKind = "STANDUP" | "INSTAGRAM" | "COMMIT" | "HUB";
 export type ActivityStatus = "SUCCESS" | "FAILED" | "SKIPPED" | "RUNNING";
 
 /** One row of the combined activity feed, whatever product produced it. */
@@ -54,6 +55,13 @@ export async function getUserDashboard(userId: string, timezone: string, now: Da
     github,
     slack,
     instagram,
+    hubRecent,
+    hubFailedWeek,
+    channels,
+    ruleCount,
+    monitorCount,
+    google,
+    aiKey,
   ] = await Promise.all([
     prisma.automation.count({ where: { userId } }),
     prisma.automation.count({ where: { userId, status: "ACTIVE" } }),
@@ -118,6 +126,18 @@ export async function getUserDashboard(userId: string, timezone: string, now: Da
     getGitHubIntegration(userId),
     listSlackIntegrations(userId),
     listInstagramIntegrations(userId),
+    prisma.workflowRun.findMany({
+      where: { userId },
+      orderBy: { createdAt: "desc" },
+      take: FEED_SIZE,
+      select: { id: true, kind: true, title: true, status: true, errorMessage: true, createdAt: true },
+    }),
+    prisma.workflowRun.count({ where: { userId, status: "FAILED", createdAt: { gte: weekAgo } } }),
+    prisma.notificationChannel.findMany({ where: { userId }, select: { kind: true, verified: true } }),
+    prisma.notificationRule.count({ where: { userId, enabled: true } }),
+    prisma.uptimeMonitor.count({ where: { userId, enabled: true } }),
+    getGoogleIntegration(userId),
+    prisma.aiCredential.count({ where: { userId } }),
   ]);
 
   const count = (rows: Array<{ status: string; _count: { _all: number } | undefined }>, status?: string) =>
@@ -158,6 +178,15 @@ export async function getUserDashboard(userId: string, timezone: string, now: Da
       status: event.status,
       at: event.createdAt,
       href: event.automation ? `/instagram/${event.automation.id}` : "/instagram",
+    })),
+    ...hubRecent.map((run) => ({
+      id: `h:${run.id}`,
+      kind: "HUB" as const,
+      title: run.title,
+      detail: [WORKFLOW_KIND_LABELS[run.kind], run.status === "FAILED" ? run.errorMessage : null].filter(Boolean).join(" · "),
+      status: run.status,
+      at: run.createdAt,
+      href: `/notifications/runs/${run.id}`,
     })),
     ...commitRecent.map((execution) => ({
       id: `c:${execution.id}`,
@@ -214,6 +243,8 @@ export async function getUserDashboard(userId: string, timezone: string, now: Da
   ];
 
   const failedToday = count(standupToday, "FAILED");
+  const brokenChannels = channels.filter((channel) => !channel.verified).length;
+  const workingChannels = channels.filter((channel) => channel.verified);
   const instagramFailedWeek = count(instagramWeek, "FAILED");
 
   return {
@@ -242,10 +273,27 @@ export async function getUserDashboard(userId: string, timezone: string, now: Da
       completedWeek: commitsWeek,
       ready: github.connected,
     },
-    activeTotal: standupActive + instagramActive + scheduleEnabled,
+    hub: {
+      rules: ruleCount,
+      monitors: monitorCount,
+      channels: workingChannels.length,
+      brokenChannels,
+      failedWeek: hubFailedWeek,
+      ready: workingChannels.length > 0,
+    },
+    connections: {
+      telegram: workingChannels.some((channel) => channel.kind === "TELEGRAM"),
+      discord: workingChannels.some((channel) => channel.kind === "DISCORD_WEBHOOK"),
+      googleSheets: google.canCreateSheets,
+      googleEmail: google.canSendEmail,
+      aiKey: aiKey > 0,
+    },
+    activeTotal: standupActive + instagramActive + scheduleEnabled + ruleCount,
     needsAttention:
       failedToday +
       instagramFailedWeek +
+      hubFailedWeek +
+      brokenChannels +
       (github.status === "REVOKED" ? 1 : 0) +
       slack.filter((workspace) => workspace.status === "REVOKED").length +
       instagram.filter((account) => account.status === "REVOKED").length,
@@ -263,6 +311,15 @@ const INSTAGRAM_EVENT_LABELS = {
   STORY_REPLY: "Story reply",
   STORY_MENTION: "Story mention",
   POSTBACK: "Follow check",
+} as const;
+
+const WORKFLOW_KIND_LABELS = {
+  NOTIFY: "Notification",
+  FORM_SUBMISSION: "Form",
+  REMINDER: "Reminder",
+  DIGEST: "Digest",
+  CROSSPOST_DRAFT: "Cross-post draft",
+  CROSSPOST_PUBLISH: "Cross-post",
 } as const;
 
 const COMMIT_STATUS = {

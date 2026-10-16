@@ -89,6 +89,15 @@ export function hmacSha256Hex(secret: string, payload: string): string {
   return crypto.createHmac("sha256", secret).update(payload, "utf8").digest("hex");
 }
 
+/**
+ * Keyed, non-reversible fingerprint of an identifier (Telegram chat id, client
+ * IP, webhook URL). Lets rows be looked up and de-duplicated by value without
+ * storing the value in plain text.
+ */
+export function fingerprint(value: string): string {
+  return crypto.createHmac("sha256", getKey()).update(`fp:${value}`, "utf8").digest("hex");
+}
+
 export function hashToken(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }

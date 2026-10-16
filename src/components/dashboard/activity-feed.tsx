@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Bot, GitCommitHorizontal, History, MessageCircle } from "lucide-react";
+import { BellRing, Bot, GitCommitHorizontal, History, MessageCircle } from "lucide-react";
 
 import { RunStatusBadge } from "@/components/status/status-badges";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +11,7 @@ const KIND: Record<ActivityKind, { label: string; icon: typeof Bot }> = {
   STANDUP: { label: "Standup", icon: Bot },
   INSTAGRAM: { label: "Instagram", icon: MessageCircle },
   COMMIT: { label: "Commit activity", icon: GitCommitHorizontal },
+  HUB: { label: "Notification hub", icon: BellRing },
 };
 
 /** Recent runs from every automation type, newest first. */

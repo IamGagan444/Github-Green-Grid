@@ -48,6 +48,18 @@ export type AppErrorCode =
   | "AUTOMATION_NOT_ACTIVE"
   | "NO_COMMITS"
   | "CONFIGURATION_MISSING"
+  | "CHANNEL_UNAVAILABLE"
+  | "CHANNEL_RATE_LIMITED"
+  | "CHANNEL_DELIVERY_FAILED"
+  | "QUOTA_EXHAUSTED"
+  | "GOOGLE_OAUTH_FAILED"
+  | "GOOGLE_NOT_CONNECTED"
+  | "GOOGLE_TOKEN_REVOKED"
+  | "GOOGLE_PERMISSION_DENIED"
+  | "GOOGLE_UNAVAILABLE"
+  | "URL_NOT_ALLOWED"
+  | "FETCH_FAILED"
+  | "STEP_OUTCOME_UNKNOWN"
   | "INTERNAL";
 
 interface CodeSpec {
@@ -222,6 +234,66 @@ const SPEC: Record<AppErrorCode, CodeSpec> = {
     retryable: false,
     httpStatus: 503,
   },
+  CHANNEL_UNAVAILABLE: {
+    message: "The notification channel no longer accepts messages (the bot was blocked or the webhook was deleted). Reconnect it.",
+    retryable: false,
+    httpStatus: 409,
+  },
+  CHANNEL_RATE_LIMITED: {
+    message: "The messaging service asked us to slow down. Delivery will be retried automatically.",
+    retryable: true,
+    httpStatus: 503,
+  },
+  CHANNEL_DELIVERY_FAILED: {
+    message: "The messaging service is temporarily unavailable. Delivery will be retried automatically.",
+    retryable: true,
+    httpStatus: 503,
+  },
+  QUOTA_EXHAUSTED: {
+    message: "Today's free usage limit is reached. This will continue automatically when it resets.",
+    retryable: true,
+    httpStatus: 429,
+  },
+  GOOGLE_OAUTH_FAILED: {
+    message: "Google could not complete the connection. Please try again.",
+    retryable: false,
+    httpStatus: 502,
+  },
+  GOOGLE_NOT_CONNECTED: {
+    message: "Connect Google in Settings → Connections first.",
+    retryable: false,
+    httpStatus: 409,
+  },
+  GOOGLE_TOKEN_REVOKED: {
+    message: "Your Google connection expired or was revoked. Reconnect Google in Settings → Connections.",
+    retryable: false,
+    httpStatus: 409,
+  },
+  GOOGLE_PERMISSION_DENIED: {
+    message: "Google denied the request. Reconnect Google and approve Sheets and Gmail access.",
+    retryable: false,
+    httpStatus: 403,
+  },
+  GOOGLE_UNAVAILABLE: {
+    message: "Google is temporarily unavailable. This will be retried automatically.",
+    retryable: true,
+    httpStatus: 503,
+  },
+  URL_NOT_ALLOWED: {
+    message: "That URL is not allowed. Use a public http(s) address.",
+    retryable: false,
+    httpStatus: 422,
+  },
+  FETCH_FAILED: {
+    message: "The address could not be reached. It will be tried again later.",
+    retryable: true,
+    httpStatus: 502,
+  },
+  STEP_OUTCOME_UNKNOWN: {
+    message: "We could not confirm whether this was published, so it was not retried. Check the destination before posting again.",
+    retryable: false,
+    httpStatus: 409,
+  },
   INTERNAL: {
     message: "Something went wrong. Please try again.",
     retryable: false,
@@ -254,6 +326,15 @@ export class AppError extends Error {
 
 export function isAppError(error: unknown): error is AppError {
   return error instanceof AppError;
+}
+
+export function isAppErrorCode(value: unknown): value is AppErrorCode {
+  return typeof value === "string" && Object.prototype.hasOwnProperty.call(SPEC, value);
+}
+
+/** Rebuilds an AppError from a stored code (unknown codes become INTERNAL). */
+export function appErrorFromCode(code: string | null | undefined): AppError {
+  return new AppError(isAppErrorCode(code) ? code : "INTERNAL", `stored error ${code ?? "none"}`);
 }
 
 export function userMessageFor(code: AppErrorCode): string {

@@ -415,6 +415,7 @@ export function createSlackPort(
           text: input.text,
           threadTs: input.threadTs,
           metadata: input.metadata,
+          blocks: input.blocks,
         }),
       ),
     permalink: async (channelId, ts) => getPermalink(await token(), channelId, ts),

@@ -41,6 +41,11 @@ export const RATE_LIMITS = {
   webhook: { limit: 120, windowSeconds: 60 },
   // Meta batches and retries deliveries from a small set of IPs.
   instagramWebhook: { limit: 600, windowSeconds: 60 },
+  // GitHub delivers from a small pool of hook IPs.
+  githubWebhook: { limit: 600, windowSeconds: 60 },
+  // Public form endpoints (per client IP, and per form).
+  formSubmitIp: { limit: 5, windowSeconds: 60 },
+  formSubmitForm: { limit: 60, windowSeconds: 3600 },
   // Per Instagram account. Meta allows ~750 private replies/hour; stay under it.
   instagramSend: { limit: 600, windowSeconds: 3600 },
   settingsWrite: { limit: 20, windowSeconds: 60 },
@@ -120,4 +125,91 @@ export function rateLimitHeaders(result: RateLimitResult): Record<string, string
     "X-RateLimit-Remaining": String(result.remaining),
     "X-RateLimit-Reset": String(Math.ceil(result.reset / 1000)),
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Smooth rate limiting (GCRA token bucket) for outbound provider limits, such
+// as Telegram's ~30 msg/s per bot and 1 msg/s per chat.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface TokenBucketOptions {
+  /** Sustained requests per second. */
+  ratePerSecond: number;
+  /** Requests allowed back to back before smoothing kicks in. */
+  burst: number;
+}
+
+const gcraStore = new Map<string, number>();
+
+/** Milliseconds to wait before a request is allowed; 0 means allowed now (and consumed). */
+export function gcraWaitMs(
+  store: Map<string, number>,
+  key: string,
+  options: TokenBucketOptions,
+  now: number,
+): number {
+  const interval = 1000 / options.ratePerSecond;
+  const tolerance = interval * Math.max(options.burst - 1, 0);
+  const tat = Math.max(store.get(key) ?? now, now);
+  const allowAt = tat - tolerance;
+  if (now < allowAt) return Math.ceil(allowAt - now);
+  store.set(key, tat + interval);
+  if (store.size > 10_000) {
+    // Drop stale keys; a key whose TAT has passed carries no state.
+    for (const [entry, value] of store) if (value < now) store.delete(entry);
+  }
+  return 0;
+}
+
+const GCRA_SCRIPT = `
+local tat = tonumber(redis.call('GET', KEYS[1]) or ARGV[1])
+local now = tonumber(ARGV[1])
+if tat < now then tat = now end
+local allow_at = tat - tonumber(ARGV[3])
+if now < allow_at then return math.ceil(allow_at - now) end
+local new_tat = tat + tonumber(ARGV[2])
+redis.call('SET', KEYS[1], tostring(new_tat), 'PX', math.ceil(new_tat - now) + 1000)
+return 0`;
+
+/**
+ * Takes one token from a shared bucket. Distributed through Upstash when
+ * configured (one EVAL per call); otherwise per instance. Never throws.
+ */
+export async function acquireToken(key: string, options: TokenBucketOptions): Promise<number> {
+  const now = Date.now();
+  if (isRedisAvailable()) {
+    try {
+      const interval = 1000 / options.ratePerSecond;
+      const [result] = await redisPipeline([
+        ["EVAL", GCRA_SCRIPT, 1, `greengrid:tb:${key}`, now, interval, interval * Math.max(options.burst - 1, 0)],
+      ]);
+      return Math.max(0, Number(result ?? 0));
+    } catch {
+      // Logged by the Redis client; fall through to the local bucket.
+    }
+  }
+  return gcraWaitMs(gcraStore, key, options, now);
+}
+
+/** Waits (up to `maxWaitMs`) for a token from every bucket; false when the wait would be longer. */
+export async function waitForTokens(
+  buckets: Array<{ key: string; options: TokenBucketOptions }>,
+  maxWaitMs: number,
+  sleep: (ms: number) => Promise<void> = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+): Promise<{ ok: true } | { ok: false; retryAfterMs: number }> {
+  const deadline = Date.now() + maxWaitMs;
+  for (const bucket of buckets) {
+    for (;;) {
+      const wait = await acquireToken(bucket.key, bucket.options);
+      if (wait === 0) break;
+      if (Date.now() + wait > deadline) return { ok: false, retryAfterMs: wait };
+      await sleep(wait);
+    }
+  }
+  return { ok: true };
+}
+
+/** Test helper. */
+export function resetTokenBuckets(): void {
+  gcraStore.clear();
 }

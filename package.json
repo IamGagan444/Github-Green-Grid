@@ -15,7 +15,8 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
-    "admin:grant": "node scripts/grant-admin.mjs"
+    "admin:grant": "node scripts/grant-admin.mjs",
+    "telegram:set-webhook": "node --env-file-if-exists=.env scripts/telegram-set-webhook.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.9.1",

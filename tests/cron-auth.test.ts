@@ -98,6 +98,7 @@ describe("cron batch processing", () => {
       successful: 1,
       skipped: 1,
       failed: 1,
+      deferred: 0,
     });
   });
 
