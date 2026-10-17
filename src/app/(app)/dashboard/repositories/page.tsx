@@ -24,7 +24,7 @@ export default async function RepositoriesPage() {
     <>
       <Header
         title="Repositories"
-        description="Choose exactly which repository GreenGrid is allowed to update."
+        description="Pick the repo GreenGrid is allowed to commit to."
         actions={
           <Button asChild variant="outline">
             <Link href="/dashboard/schedule">Configure schedule</Link>

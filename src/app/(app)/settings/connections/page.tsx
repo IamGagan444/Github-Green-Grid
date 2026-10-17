@@ -57,7 +57,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
     <>
       <Header
         title="Connections"
-        description="Free channels and services your automations use. Secrets are encrypted at rest and never sent to your browser."
+        description="The accounts your automations use. Keys and tokens are stored encrypted and never sent to your browser."
         back={{ href: "/settings", label: "Settings" }}
       />
 
@@ -162,7 +162,7 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
           </CardHeader>
           <CardContent className="pt-0">
             <Button asChild size="sm" variant="outline">
-              <Link href="/notifications#channels">Manage channels</Link>
+              <Link href="/notifications?tab=channels">Manage channels</Link>
             </Button>
           </CardContent>
         </Card>

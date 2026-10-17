@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
 import { IDLE_ACTION_STATE, type ActionState } from "@/lib/actions/action-state";
@@ -18,6 +19,8 @@ interface ActionFormProps {
   pendingLabel?: string;
   /** Clears the inputs after a success (forms that add something). */
   resetOnSuccess?: boolean;
+  /** Navigates here after a success (e.g. back to a list once an item is created). */
+  successHref?: string;
   variant?: "default" | "outline" | "ghost" | "secondary" | "destructive";
   size?: "default" | "sm";
   icon?: React.ReactNode;
@@ -32,6 +35,7 @@ export function ActionForm({
   submitLabel,
   pendingLabel = "Working…",
   resetOnSuccess = false,
+  successHref,
   variant = "default",
   size = "sm",
   icon,
@@ -39,8 +43,10 @@ export function ActionForm({
 }: ActionFormProps) {
   const [state, formAction, pending] = React.useActionState(action, IDLE_ACTION_STATE);
   const formRef = React.useRef<HTMLFormElement>(null);
+  const router = useRouter();
   useActionToast(state, () => {
     if (resetOnSuccess) formRef.current?.reset();
+    if (successHref) router.push(successHref, { scroll: false });
   });
 
   return (

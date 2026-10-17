@@ -155,7 +155,7 @@ async function DashboardBody({
           <ProductCard
             icon={<CalendarClock className="size-4" aria-hidden="true" />}
             title="Commit activity"
-            description="Scheduled, lightweight repository maintenance through GitHub's API."
+            description="Small, real commits to a repo you choose, on the days you pick."
             status={productStatus(commits.ready, commits.enabled, commits.total)}
             blocker={commits.ready ? undefined : "Connect GitHub to choose repositories."}
             metrics={[

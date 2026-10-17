@@ -56,7 +56,7 @@ export default async function RunPage({ params }: { params: Promise<{ id: string
 
   return (
     <>
-      <Header title={run.title} description={KIND_LABEL[run.kind]} back={{ href: "/notifications", label: "Notification hub" }} />
+      <Header title={run.title} description={KIND_LABEL[run.kind]} back={{ href: "/notifications?tab=activity", label: "Activity" }} />
 
       <div className="flex max-w-3xl flex-col gap-5 px-4 py-6 sm:px-6">
         <Card>

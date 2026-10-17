@@ -43,7 +43,7 @@ export default async function ActivityPage({ searchParams }: { searchParams: Sea
     <>
       <Header
         title="Commit activity"
-        description="Scheduled repository maintenance and every execution's result."
+        description="Every scheduled commit and how it went."
         actions={
           primarySchedule ? (
             <RunNowButton
@@ -143,8 +143,8 @@ async function ActivityContent({
       {history.rows.length === 0 ? (
         <EmptyState
           icon={History}
-          title="No automated activity yet."
-          description="Once a schedule runs, every execution is recorded here with its commit."
+          title="Nothing here yet"
+          description="Once your schedule runs, each commit shows up here."
           action={
             <Button asChild>
               <Link href="/dashboard/schedule">Create your first schedule</Link>

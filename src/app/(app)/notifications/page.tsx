@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { BellRing, GitBranch, History, Plus, RadioTower, RefreshCw, Send, Trash2, type LucideIcon } from "lucide-react";
+import { Activity, BellRing, GitBranch, History, Plus, RadioTower, RefreshCw, Send, Trash2, type LucideIcon } from "lucide-react";
 
 import {
   addDiscordChannelAction,
@@ -43,11 +43,16 @@ import { listMonitors } from "@/services/uptime-service";
 export const metadata: Metadata = { title: "Notifications" };
 export const dynamic = "force-dynamic";
 
-const TAB_IDS = ["rules", "channels", "github", "activity"] as const;
+const TAB_IDS = ["rules", "new", "channels", "github", "activity"] as const;
 type TabId = (typeof TAB_IDS)[number];
+type RuleSource = "github" | "uptime";
+
+const RULES_HREF = "/notifications?tab=rules";
+const CHANNELS_HREF = "/notifications?tab=channels";
+const newRuleHref = (source: RuleSource) => `/notifications?tab=new&source=${source}`;
 
 export default async function NotificationsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  const { tab: requestedTab } = await searchParams;
+  const { tab: requestedTab, source: requestedSource } = await searchParams;
   const user = await requireUser("notification:manage:own");
   const [preferences, channels, rules, runs, monitors, github, installations, google, slackWorkspaces] = await Promise.all([
     prisma.user.findUnique({ where: { id: user.userId }, select: { defaultTimezone: true } }),
@@ -66,14 +71,16 @@ export default async function NotificationsPage({ searchParams }: { searchParams
   const connectedWorkspaces = slackWorkspaces
     .filter((workspace) => workspace.status === "CONNECTED")
     .map((workspace) => ({ id: workspace.id, teamName: workspace.teamName }));
-  // Until a channel works there is nothing to route, so new users land on Channels.
+  // Nothing can be routed until a channel works, so new users start on Channels.
   const activeTab: TabId = TAB_IDS.includes(requestedTab as TabId)
     ? (requestedTab as TabId)
     : verifiedChannels.length === 0
       ? "channels"
       : "rules";
+  const ruleSource: RuleSource = requestedSource === "uptime" ? "uptime" : "github";
   const tabs: Array<{ id: TabId; label: string; icon: LucideIcon; count?: number; attention?: boolean }> = [
     { id: "rules", label: "Rules", icon: BellRing, count: rules.length },
+    { id: "new", label: "New rule", icon: Plus },
     {
       id: "channels",
       label: "Channels",
@@ -89,7 +96,7 @@ export default async function NotificationsPage({ searchParams }: { searchParams
     <>
       <Header
         title="Notification hub"
-        description="Route GitHub and uptime events to Telegram, Discord, Slack or email — free channels only."
+        description="Get GitHub and uptime alerts in Telegram, Discord, Slack or your inbox."
         actions={
           <Button asChild variant="outline" size="sm">
             <Link href="/notifications/uptime">Uptime monitors</Link>
@@ -101,17 +108,44 @@ export default async function NotificationsPage({ searchParams }: { searchParams
         <TabNav tabs={tabs} active={activeTab} />
 
         {activeTab === "rules" ? (
-          <Card id="rules" className="scroll-mt-6">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <BellRing className="size-4 text-primary" aria-hidden="true" />
-                Rules
-              </CardTitle>
-              <CardDescription>A rule sends matching events to the channels you pick.</CardDescription>
+          <Card>
+            <CardHeader className="flex flex-row items-start justify-between gap-3">
+              <div className="flex flex-col gap-1.5">
+                <CardTitle className="flex items-center gap-2">
+                  <BellRing className="size-4 text-primary" aria-hidden="true" />
+                  Rules
+                </CardTitle>
+                <CardDescription>Each rule says which events to watch and where to send them.</CardDescription>
+              </div>
+              {rules.length > 0 && verifiedChannels.length > 0 ? (
+                <Button asChild size="sm">
+                  <Link href={newRuleHref("github")} scroll={false}>
+                    <Plus aria-hidden="true" />
+                    New rule
+                  </Link>
+                </Button>
+              ) : null}
             </CardHeader>
-            <CardContent className="flex flex-col gap-4 pt-0">
+            <CardContent className="pt-0">
               {rules.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No rules yet. Add a channel, then create a rule below.</p>
+                <EmptyState
+                  icon={BellRing}
+                  title="No rules yet"
+                  description={
+                    verifiedChannels.length === 0
+                      ? "Add a channel first, so your alerts have somewhere to go."
+                      : "Pick what you want to hear about, like new pull requests or a site going down."
+                  }
+                  className="py-8"
+                  action={
+                    <Button asChild size="sm">
+                      <Link href={verifiedChannels.length === 0 ? CHANNELS_HREF : newRuleHref("github")} scroll={false}>
+                        <Plus aria-hidden="true" />
+                        {verifiedChannels.length === 0 ? "Add a channel" : "Create your first rule"}
+                      </Link>
+                    </Button>
+                  }
+                />
               ) : (
                 <ul className="divide-y divide-border rounded-md border border-border">
                   {rules.map((rule) => (
@@ -140,7 +174,7 @@ export default async function NotificationsPage({ searchParams }: { searchParams
                           triggerLabel="Delete"
                           triggerIcon={<Trash2 aria-hidden="true" />}
                           title={`Delete “${rule.name}”?`}
-                          description="Events stop being routed by this rule. Delivery history is kept."
+                          description="You'll stop getting these alerts. Past deliveries stay in Activity."
                           confirmLabel="Delete rule"
                         />
                       </div>
@@ -148,19 +182,71 @@ export default async function NotificationsPage({ searchParams }: { searchParams
                   ))}
                 </ul>
               )}
+            </CardContent>
+          </Card>
+        ) : null}
 
+        {activeTab === "new" ? (
+          <Card className="max-w-3xl">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Plus className="size-4 text-primary" aria-hidden="true" />
+                New rule
+              </CardTitle>
+              <CardDescription>Choose what to watch, then where the alert should go.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-5 pt-0">
               {verifiedChannels.length === 0 ? (
-                <p className="rounded-md border border-dashed border-border px-3 py-2 text-sm text-muted-foreground">
-                  <Link href="/notifications?tab=channels" className="underline">Add a working channel</Link> before creating rules.
-                </p>
+                <EmptyState
+                  icon={RadioTower}
+                  title="Add a channel first"
+                  description="Rules need at least one working channel to send to."
+                  className="py-8"
+                  action={
+                    <Button asChild size="sm">
+                      <Link href={CHANNELS_HREF} scroll={false}>
+                        Go to channels
+                      </Link>
+                    </Button>
+                  }
+                />
               ) : (
-                <div className="grid gap-4 lg:grid-cols-2">
-                  <div className="rounded-md border border-border p-4">
-                    <h3 className="mb-3 flex items-center gap-2 text-sm font-medium">
-                      <GitBranch className="size-4 text-muted-foreground" aria-hidden="true" />
-                      New GitHub rule
-                    </h3>
-                    <ActionForm action={createGitHubRuleAction} submitLabel="Create rule" pendingLabel="Creating…" resetOnSuccess>
+                <>
+                  <div role="radiogroup" aria-label="Rule source" className="grid gap-3 sm:grid-cols-2">
+                    <SourceOption
+                      href={newRuleHref("github")}
+                      selected={ruleSource === "github"}
+                      icon={GitBranch}
+                      title="GitHub"
+                      description="Pull requests, review requests, failed checks, releases and new issues."
+                    />
+                    <SourceOption
+                      href={newRuleHref("uptime")}
+                      selected={ruleSource === "uptime"}
+                      icon={Activity}
+                      title="Uptime"
+                      description="A site goes down, comes back up, or its certificate is about to expire."
+                    />
+                  </div>
+
+                  {ruleSource === "github" ? (
+                    <ActionForm
+                      key="github"
+                      action={createGitHubRuleAction}
+                      submitLabel="Create rule"
+                      pendingLabel="Creating…"
+                      resetOnSuccess
+                      successHref={RULES_HREF}
+                    >
+                      {installations.length === 0 ? (
+                        <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+                          The GitHub App isn&apos;t installed yet, so this rule won&apos;t fire.{" "}
+                          <Link href="/notifications?tab=github" className="underline">
+                            Install it
+                          </Link>
+                          .
+                        </p>
+                      ) : null}
                       <div className="flex flex-col gap-1.5">
                         <Label htmlFor="gh-name">Name</Label>
                         <Input id="gh-name" name="name" defaultValue="GitHub alerts" maxLength={80} required />
@@ -174,18 +260,19 @@ export default async function NotificationsPage({ searchParams }: { searchParams
                       <div className="flex flex-col gap-1.5">
                         <Label htmlFor="gh-repos">Repositories (optional)</Label>
                         <Input id="gh-repos" name="repositories" placeholder="owner/repo, owner/other" maxLength={2000} />
-                        <p className="text-xs text-muted-foreground">Leave empty for every repository the GitHub App can see.</p>
+                        <p className="text-xs text-muted-foreground">Leave it blank to cover every repo the app can see.</p>
                       </div>
                       <ChannelPicker channels={verifiedChannels} />
                     </ActionForm>
-                  </div>
-
-                  <div className="rounded-md border border-border p-4">
-                    <h3 className="mb-3 flex items-center gap-2 text-sm font-medium">
-                      <BellRing className="size-4 text-muted-foreground" aria-hidden="true" />
-                      New uptime rule
-                    </h3>
-                    <ActionForm action={createUptimeRuleAction} submitLabel="Create rule" pendingLabel="Creating…" resetOnSuccess>
+                  ) : (
+                    <ActionForm
+                      key="uptime"
+                      action={createUptimeRuleAction}
+                      submitLabel="Create rule"
+                      pendingLabel="Creating…"
+                      resetOnSuccess
+                      successHref={RULES_HREF}
+                    >
                       <div className="flex flex-col gap-1.5">
                         <Label htmlFor="up-name">Name</Label>
                         <Input id="up-name" name="name" defaultValue="Uptime alerts" maxLength={80} required />
@@ -198,21 +285,201 @@ export default async function NotificationsPage({ searchParams }: { searchParams
                       </fieldset>
                       {monitors.length > 0 ? (
                         <fieldset className="flex flex-col gap-1.5">
-                          <legend className="mb-1.5 text-sm font-medium">Monitors (none selected = all)</legend>
+                          <legend className="mb-1.5 text-sm font-medium">Monitors (leave all unticked to cover every one)</legend>
                           {monitors.map((monitor) => (
                             <CheckboxField key={monitor.id} name="monitorIds" value={monitor.id} label={monitor.label} description={monitor.url} />
                           ))}
                         </fieldset>
                       ) : (
-                        <p className="text-xs text-muted-foreground">
-                          No monitors yet — <Link href="/notifications/uptime" className="underline">add a URL to watch</Link>.
+                        <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+                          You aren&apos;t watching any sites yet.{" "}
+                          <Link href="/notifications/uptime" className="underline">
+                            Add one
+                          </Link>{" "}
+                          and this rule will cover it automatically.
                         </p>
                       )}
                       <ChannelPicker channels={verifiedChannels} />
                     </ActionForm>
-                  </div>
-                </div>
+                  )}
+                </>
               )}
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {activeTab === "channels" ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <RadioTower className="size-4 text-primary" aria-hidden="true" />
+                Channels
+              </CardTitle>
+              <CardDescription>Where your alerts end up. We send a test message whenever you add one.</CardDescription>
+            </CardHeader>
+            <CardContent className="grid gap-5 pt-0 lg:grid-cols-2">
+              <div className="flex min-w-0 flex-col gap-2">
+                <h3 className="text-sm font-medium">Your channels</h3>
+                {channels.length === 0 ? (
+                  <p className="rounded-md border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
+                    No channels yet. Telegram takes about ten seconds.
+                  </p>
+                ) : (
+                  <ul className="divide-y divide-border rounded-md border border-border">
+                    {channels.map((channel) => (
+                      <li key={channel.id} className="flex flex-col gap-2 px-3 py-2.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">{channel.label}</p>
+                            <p className="text-xs text-muted-foreground">{CHANNEL_KIND_LABELS[channel.kind]}</p>
+                          </div>
+                          {channel.verified ? <Badge variant="success">Working</Badge> : <Badge variant="destructive">Needs attention</Badge>}
+                        </div>
+                        {channel.lastError ? <p className="text-xs text-destructive">{channel.lastError}</p> : null}
+                        <div className="flex flex-wrap gap-2">
+                          <ActionForm action={testChannelAction} fields={{ id: channel.id }} submitLabel="Send test" pendingLabel="Sending…" variant="outline" />
+                          <ConfirmAction
+                            action={deleteChannelAction}
+                            fields={{ id: channel.id }}
+                            triggerLabel="Remove"
+                            triggerIcon={<Trash2 aria-hidden="true" />}
+                            title={`Remove ${channel.label}?`}
+                            description="Rules stop sending here. Any other channels on those rules keep working."
+                            confirmLabel="Remove channel"
+                          />
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div className="flex min-w-0 flex-col gap-4">
+                <h3 className="text-sm font-medium">Add a channel</h3>
+                <div className="flex flex-col gap-2 rounded-md border border-border p-3">
+                  <p className="text-sm font-medium">Telegram</p>
+                  {isTelegramConfigured() ? (
+                    <>
+                      <p className="text-xs text-muted-foreground">Opens our bot in Telegram. Press Start there and you&apos;re connected.</p>
+                      <div>
+                        <Button asChild size="sm" variant="outline">
+                          <a href="/api/integrations/telegram/connect?returnTo=/notifications">
+                            <Plus aria-hidden="true" />
+                            Connect a Telegram chat
+                          </a>
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Telegram isn&apos;t set up on this server.</p>
+                  )}
+                </div>
+
+                <details className="rounded-md border border-border p-3">
+                  <summary className="cursor-pointer text-sm font-medium">Discord</summary>
+                  <ActionForm action={addDiscordChannelAction} submitLabel="Add Discord channel" pendingLabel="Testing…" resetOnSuccess className="mt-3">
+                    <Input name="label" placeholder="#alerts on my server" maxLength={60} required aria-label="Name" />
+                    <Input name="webhookUrl" placeholder="https://discord.com/api/webhooks/…" maxLength={300} required aria-label="Webhook URL" />
+                    <p className="text-xs text-muted-foreground">In Discord: Server settings → Integrations → Webhooks → New webhook, then copy its URL.</p>
+                  </ActionForm>
+                </details>
+
+                <details className="rounded-md border border-border p-3">
+                  <summary className="cursor-pointer text-sm font-medium">Slack</summary>
+                  {connectedWorkspaces.length === 0 ? (
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      <Link href="/settings#integrations" className="underline">
+                        Connect Slack
+                      </Link>{" "}
+                      first, then come back to pick a channel.
+                    </p>
+                  ) : (
+                    <ActionForm action={addSlackChannelAction} submitLabel="Add Slack channel" pendingLabel="Checking…" resetOnSuccess className="mt-3">
+                      <WhenOpened>
+                        <SlackChannelPicker workspaces={connectedWorkspaces} />
+                      </WhenOpened>
+                    </ActionForm>
+                  )}
+                </details>
+
+                <details className="rounded-md border border-border p-3">
+                  <summary className="cursor-pointer text-sm font-medium">Email</summary>
+                  {google.canSendEmail ? (
+                    <ActionForm action={addEmailChannelAction} submitLabel="Add email channel" pendingLabel="Sending test…" resetOnSuccess className="mt-3">
+                      <Input name="to" type="email" defaultValue={google.email ?? ""} required aria-label="Email address" />
+                      <Input name="label" placeholder="Label (optional)" maxLength={60} aria-label="Label" />
+                      <p className="text-xs text-muted-foreground">Sent from your own Gmail ({google.email}).</p>
+                    </ActionForm>
+                  ) : (
+                    <p className="mt-3 text-xs text-muted-foreground">
+                      <Link href="/settings/connections" className="underline">
+                        Connect Google
+                      </Link>{" "}
+                      and allow Gmail sending first.
+                    </p>
+                  )}
+                </details>
+              </div>
+            </CardContent>
+          </Card>
+        ) : null}
+
+        {activeTab === "github" ? (
+          <Card className="max-w-3xl">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <GitBranch className="size-4 text-primary" aria-hidden="true" />
+                GitHub
+              </CardTitle>
+              <CardDescription>Alerts come from the GreenGrid GitHub App. Install it on the repos you want to hear about.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3 pt-0">
+              {installations.length === 0 ? (
+                <p className="text-sm text-muted-foreground">The app isn&apos;t installed on any of your repos yet.</p>
+              ) : (
+                <ul className="divide-y divide-border rounded-md border border-border text-sm">
+                  {installations.map((installation) => (
+                    <li key={installation.id} className="flex items-center justify-between gap-2 px-3 py-2.5">
+                      <span className="truncate">
+                        <span className="font-medium">{installation.accountLogin}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {" "}
+                          · {installation.repositorySelection === "all" ? "all repositories" : "selected repositories"}
+                        </span>
+                      </span>
+                      {installation.suspendedAt ? <Badge variant="warning">Suspended</Badge> : <Badge variant="success">Linked</Badge>}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                {githubAppSlug ? (
+                  <Button asChild size="sm" variant="outline">
+                    <a href={`https://github.com/apps/${encodeURIComponent(githubAppSlug)}/installations/new`} target="_blank" rel="noreferrer">
+                      {installations.length === 0 ? "Install on repositories" : "Change repositories"}
+                    </a>
+                  </Button>
+                ) : null}
+                {github.connected ? (
+                  <ActionForm
+                    action={syncGitHubInstallationsAction}
+                    submitLabel="Refresh"
+                    pendingLabel="Refreshing…"
+                    variant="ghost"
+                    icon={<RefreshCw aria-hidden="true" />}
+                  />
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    <a href="/api/integrations/github/connect?returnTo=/notifications" className="underline">
+                      Connect GitHub
+                    </a>{" "}
+                    so we can tell which installations are yours.
+                  </p>
+                )}
+              </div>
+              {github.connected && installations.length === 0 ? (
+                <p className="text-xs text-muted-foreground">Already installed it? Press Refresh.</p>
+              ) : null}
             </CardContent>
           </Card>
         ) : null}
@@ -222,13 +489,13 @@ export default async function NotificationsPage({ searchParams }: { searchParams
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <History className="size-4 text-primary" aria-hidden="true" />
-                Recent deliveries
+                Activity
               </CardTitle>
-              <CardDescription>Every event, form and reminder run, with per-channel results.</CardDescription>
+              <CardDescription>Your last 20 alerts and whether each one got through.</CardDescription>
             </CardHeader>
             <CardContent className="pt-0">
               {runs.length === 0 ? (
-                <EmptyState icon={Send} title="Nothing delivered yet" description="Deliveries appear here as events arrive." className="py-8" />
+                <EmptyState icon={Send} title="Nothing sent yet" description="Alerts show up here as soon as they go out." className="py-8" />
               ) : (
                 <ul className="-mx-2 divide-y divide-border">
                   {runs.map((run) => (
@@ -254,163 +521,6 @@ export default async function NotificationsPage({ searchParams }: { searchParams
                   ))}
                 </ul>
               )}
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {activeTab === "channels" ? (
-          <Card id="channels" className="scroll-mt-6">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <RadioTower className="size-4 text-primary" aria-hidden="true" />
-                Channels
-              </CardTitle>
-              <CardDescription>Where messages go. Each one is tested when you add it.</CardDescription>
-            </CardHeader>
-            <CardContent className="grid gap-5 pt-0 lg:grid-cols-2">
-              <div className="flex min-w-0 flex-col gap-2">
-                <h3 className="text-sm font-medium">Your channels</h3>
-                {channels.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No channels yet.</p>
-                ) : (
-                  <ul className="divide-y divide-border rounded-md border border-border">
-                    {channels.map((channel) => (
-                      <li key={channel.id} className="flex flex-col gap-2 px-3 py-2.5">
-                        <div className="flex items-center justify-between gap-2">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-medium">{channel.label}</p>
-                            <p className="text-xs text-muted-foreground">{CHANNEL_KIND_LABELS[channel.kind]}</p>
-                          </div>
-                          {channel.verified ? <Badge variant="success">Working</Badge> : <Badge variant="destructive">Needs attention</Badge>}
-                        </div>
-                        {channel.lastError ? <p className="text-xs text-destructive">{channel.lastError}</p> : null}
-                        <div className="flex flex-wrap gap-2">
-                          <ActionForm action={testChannelAction} fields={{ id: channel.id }} submitLabel="Send test" pendingLabel="Sending…" variant="outline" />
-                          <ConfirmAction
-                            action={deleteChannelAction}
-                            fields={{ id: channel.id }}
-                            triggerLabel="Remove"
-                            triggerIcon={<Trash2 aria-hidden="true" />}
-                            title={`Remove ${channel.label}?`}
-                            description="Rules stop sending here. Other channels on those rules keep working."
-                            confirmLabel="Remove channel"
-                          />
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-
-              <div className="flex min-w-0 flex-col gap-4">
-                <div className="flex flex-col gap-2">
-                  <h3 className="text-sm font-medium">Telegram</h3>
-                  {isTelegramConfigured() ? (
-                    <Button asChild size="sm" variant="outline">
-                      <a href="/api/integrations/telegram/connect?returnTo=/notifications">
-                        <Plus aria-hidden="true" />
-                        Connect a Telegram chat
-                      </a>
-                    </Button>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">The Telegram bot is not configured on this server.</p>
-                  )}
-                </div>
-  
-                <details className="rounded-md border border-border p-3">
-                  <summary className="cursor-pointer text-sm font-medium">Add a Discord webhook</summary>
-                  <ActionForm action={addDiscordChannelAction} submitLabel="Add Discord channel" pendingLabel="Testing…" resetOnSuccess className="mt-3">
-                    <Input name="label" placeholder="#alerts on my server" maxLength={60} required aria-label="Name" />
-                    <Input name="webhookUrl" placeholder="https://discord.com/api/webhooks/…" maxLength={300} required aria-label="Webhook URL" />
-                    <p className="text-xs text-muted-foreground">Discord: Server settings → Integrations → Webhooks → New webhook → Copy URL.</p>
-                  </ActionForm>
-                </details>
-  
-                <details className="rounded-md border border-border p-3">
-                  <summary className="cursor-pointer text-sm font-medium">Add a Slack channel</summary>
-                  {connectedWorkspaces.length === 0 ? (
-                    <p className="mt-3 text-xs text-muted-foreground">
-                      <Link href="/settings#integrations" className="underline">Connect Slack</Link> first.
-                    </p>
-                  ) : (
-                    <ActionForm action={addSlackChannelAction} submitLabel="Add Slack channel" pendingLabel="Checking…" resetOnSuccess className="mt-3">
-                      <WhenOpened>
-                        <SlackChannelPicker workspaces={connectedWorkspaces} />
-                      </WhenOpened>
-                    </ActionForm>
-                  )}
-                </details>
-  
-                <details className="rounded-md border border-border p-3">
-                  <summary className="cursor-pointer text-sm font-medium">Add an email address</summary>
-                  {google.canSendEmail ? (
-                    <ActionForm action={addEmailChannelAction} submitLabel="Add email channel" pendingLabel="Sending test…" resetOnSuccess className="mt-3">
-                      <Input name="to" type="email" defaultValue={google.email ?? ""} required aria-label="Email address" />
-                      <Input name="label" placeholder="Label (optional)" maxLength={60} aria-label="Label" />
-                      <p className="text-xs text-muted-foreground">Sent from your own Gmail ({google.email}).</p>
-                    </ActionForm>
-                  ) : (
-                    <p className="mt-3 text-xs text-muted-foreground">
-                      <Link href="/settings/connections" className="underline">Connect Google</Link> with Gmail sending first.
-                    </p>
-                  )}
-                </details>
-              </div>
-            </CardContent>
-          </Card>
-        ) : null}
-
-        {activeTab === "github" ? (
-          <Card className="max-w-3xl">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <GitBranch className="size-4 text-primary" aria-hidden="true" />
-                GitHub events
-              </CardTitle>
-              <CardDescription>Events arrive through the GreenGrid GitHub App installed on your repositories.</CardDescription>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-3 pt-0">
-              {installations.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No installations linked to your account yet.</p>
-              ) : (
-                <ul className="flex flex-col gap-1 text-sm">
-                  {installations.map((installation) => (
-                    <li key={installation.id} className="flex items-center justify-between gap-2">
-                      <span className="truncate">
-                        {installation.accountLogin}
-                        <span className="text-xs text-muted-foreground">
-                          {" "}
-                          · {installation.repositorySelection === "all" ? "all repositories" : "selected repositories"}
-                        </span>
-                      </span>
-                      {installation.suspendedAt ? <Badge variant="warning">Suspended</Badge> : null}
-                    </li>
-                  ))}
-                </ul>
-              )}
-              <div className="flex flex-wrap gap-2">
-                {githubAppSlug ? (
-                  <Button asChild size="sm" variant="outline">
-                    <a href={`https://github.com/apps/${encodeURIComponent(githubAppSlug)}/installations/new`} target="_blank" rel="noreferrer">
-                      Install on repositories
-                    </a>
-                  </Button>
-                ) : null}
-                {github.connected ? (
-                  <ActionForm
-                    action={syncGitHubInstallationsAction}
-                    submitLabel="Refresh"
-                    pendingLabel="Refreshing…"
-                    variant="ghost"
-                    icon={<RefreshCw aria-hidden="true" />}
-                  />
-                ) : (
-                  <p className="text-xs text-muted-foreground">
-                    <a href="/api/integrations/github/connect?returnTo=/notifications" className="underline">Connect GitHub</a> so installations
-                    can be linked to you.
-                  </p>
-                )}
-              </div>
             </CardContent>
           </Card>
         ) : null}
@@ -458,6 +568,39 @@ function TabNav({
         })}
       </ul>
     </nav>
+  );
+}
+
+function SourceOption({
+  href,
+  selected,
+  icon: Icon,
+  title,
+  description,
+}: {
+  href: string;
+  selected: boolean;
+  icon: LucideIcon;
+  title: string;
+  description: string;
+}) {
+  return (
+    <Link
+      href={href}
+      scroll={false}
+      role="radio"
+      aria-checked={selected}
+      className={cn(
+        "flex items-start gap-3 rounded-md border p-3 transition-colors",
+        selected ? "border-primary bg-primary/5" : "border-border hover:bg-secondary/40",
+      )}
+    >
+      <Icon className={cn("mt-0.5 size-4 shrink-0", selected ? "text-primary" : "text-muted-foreground")} aria-hidden="true" />
+      <span className="min-w-0">
+        <span className="block text-sm font-medium">{title}</span>
+        <span className="block text-xs text-muted-foreground">{description}</span>
+      </span>
+    </Link>
   );
 }
 

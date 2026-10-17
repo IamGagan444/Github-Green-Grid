@@ -36,7 +36,7 @@ export default async function UptimePage() {
     <>
       <Header
         title="Uptime monitors"
-        description="Checked every 15 minutes. You are alerted only when a site goes down or comes back, and before its TLS certificate expires."
+        description="We check every 15 minutes. You hear about it when a site goes down, when it comes back, and before its certificate expires."
         back={{ href: "/notifications", label: "Notification hub" }}
       />
 
@@ -48,7 +48,7 @@ export default async function UptimePage() {
               Watch a URL
             </CardTitle>
             <CardDescription>
-              Alerts go wherever your <Link href="/notifications#rules" className="underline">uptime rules</Link> send them.
+              Alerts go wherever your <Link href="/notifications?tab=rules" className="underline">uptime rules</Link> send them.
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-0">
@@ -60,7 +60,7 @@ export default async function UptimePage() {
         </Card>
 
         {monitors.length === 0 ? (
-          <EmptyState icon={Activity} title="No monitors yet" description="Add a public http(s) URL above." />
+          <EmptyState icon={Activity} title="No monitors yet" description="Add a public URL above to start watching it." />
         ) : (
           <Card>
             <CardContent className="pt-6">
@@ -97,7 +97,7 @@ export default async function UptimePage() {
                           triggerLabel="Delete"
                           triggerIcon={<Trash2 aria-hidden="true" />}
                           title={`Stop monitoring ${monitor.label}?`}
-                          description="Checks stop immediately. Past alerts stay in your delivery history."
+                          description="Checks stop right away. Past alerts stay in Activity."
                           confirmLabel="Delete monitor"
                         />
                       </div>
