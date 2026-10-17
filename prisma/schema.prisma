@@ -889,6 +889,8 @@ model Form {
   ackBody        String?
   // Origins allowed to POST from the owner's own site. Empty = any origin.
   allowedOrigins String[] @default([])
+  // Notification channels alerted on each response (owned by the same user; checked on every send).
+  channelIds     String[] @default([])
 
   submissionCount Int @default(0)
 
@@ -968,6 +970,8 @@ model ReminderSettings {
   payeeName     String?
   emailSubject  String  @default("Payment reminder: {amount} due {dueDate}")
   emailTemplate String  @default("Hi {name},\n\nThis is a friendly reminder that {amount} is due on {dueDate}.\n\nThank you!")
+  // Channels that get the owner's copy (with the one-tap WhatsApp button).
+  channelIds    String[] @default([])
   // Local day the last batch ran, so each day runs once.
   lastRunDate   String?
 

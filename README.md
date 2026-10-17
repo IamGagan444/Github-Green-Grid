@@ -46,6 +46,8 @@ What GreenGrid explicitly does **not** do:
 - [Architecture](#architecture)
 - [Standup automations](#standup-automations)
 - [Notification hub](#notification-hub)
+- [Forms → Google Sheet](#forms--google-sheet)
+- [Payment reminders](#payment-reminders)
 - [Roles and access control](#roles-and-access-control)
 - [Local development](#local-development)
 - [Google sign-in setup](#google-sign-in-setup)
@@ -399,6 +401,74 @@ Pages: **Notifications** (`/notifications`) for channels, rules and delivery
 history; **Uptime monitors** (`/notifications/uptime`); **Settings →
 Connections** (`/settings/connections`) for Telegram, Google, the AI key and
 today's free-tier usage.
+
+## Forms → Google Sheet
+
+**Problem it fixes:** form answers sit unread in an inbox, or in a tool you
+forget to check. Every response lands as a row in your own Google Sheet, and
+you're pinged on the channels you pick.
+
+1. Connect Google with Sheets (Settings → Connections).
+2. **Forms → New form**: name it, add up to 20 fields (short/long text, email,
+   phone, number, dropdown, checkbox), pick the channels to alert. GreenGrid
+   creates a Sheet in your Drive (`drive.file`: it can only see files it made)
+   with one column per question.
+3. Share the link `/f/<id>`, or paste the HTML snippet from the form page into
+   your own site after adding its address under *Your website*.
+4. Optional: email each person a confirmation from your Gmail, with
+   `{{field_id}}` placeholders.
+
+**What happens on a response.** It is validated against the form's fields,
+stored, and turned into a workflow run: append the row (retried until it lands,
+since a duplicate row is better than a lost one), send the confirmation
+(at most once), then alert each channel. Rows are appended with
+`valueInputOption=RAW`, so an answer like `=HYPERLINK(…)` stays text. Fields
+lock once a form has responses so the Sheet's columns never shift.
+
+**Spam protection.** A hidden honeypot field, a signed page token that rejects
+submissions under 2 seconds or over 24 hours old, rate limits per IP and per
+form, and an origin allow-list for posts from other sites. Responses are kept
+here for 90 days; the Sheet is the permanent copy.
+
+**Test it:** create a form with a required email, open the link, submit too
+fast with an empty email → field errors; fill it in properly → a new row in
+the Sheet and an alert in Telegram. Pause the form → the link says it's closed.
+
+## Payment reminders
+
+**Problem it fixes:** chasing unpaid invoices is awkward and easy to forget.
+GreenGrid sends polite reminders on schedule and stops the moment you mark
+the payment as paid.
+
+At **Payment reminders** (`/reminders`):
+
+1. **How reminders go out:** the hour and time zone, your UPI ID and name,
+   the email subject and message (placeholders `{name}`, `{amount}`,
+   `{dueDate}`, `{note}`, `{upiId}`, `{paymentLink}`), and which of your
+   channels get a copy.
+2. **Add a payment to chase:** customer, email and/or WhatsApp number, amount,
+   due date, an optional note and payment link, how often and how many times.
+
+On the due date (or today, if it's already overdue), at your chosen hour, and
+then every *N* days up to the limit:
+
+- **The customer gets an email from your own Gmail** (`gmail.send`), with how
+  to pay: your UPI ID and the payment link. Sent at most once per reminder,
+  and skipped if you marked it paid in the meantime.
+- **You get a copy** in your channels with a one-tap **WhatsApp** button that
+  opens a chat with the customer, the reminder already typed. You send it from
+  your own WhatsApp, so it costs nothing and comes from you. **Mark as paid**
+  in the same message opens the page to confirm.
+
+Amounts are stored as integers in minor units and formatted per currency
+(`₹1,00,000`). Each reminder is a workflow run keyed
+`reminder:<payment>:<number>`, so a reminder can never go out twice.
+**Remind now** sends the next one immediately (at most one per ten minutes).
+
+**Test it:** set your UPI ID, add yourself as a customer with your own email
+and number, due today → press **Remind now** → the email arrives in your
+inbox, and Telegram shows the copy with the WhatsApp button. Mark it paid →
+no more reminders.
 
 ## Roles and access control
 

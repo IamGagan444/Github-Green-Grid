@@ -19,6 +19,7 @@ import {
 import { syncGitHubInstallations } from "@/services/github-webhook-service";
 import { createRule, deleteRule, setRuleEnabled } from "@/services/notification-service";
 import { createMonitor, deleteMonitor, setMonitorEnabled } from "@/services/uptime-service";
+import "@/services/workflow-handlers";
 import { retryRun } from "@/services/workflow-service";
 
 /**

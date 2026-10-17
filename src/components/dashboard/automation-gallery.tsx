@@ -80,10 +80,10 @@ export function AutomationGallery({ connections, hubReady }: { connections: Gall
       description: "A shareable form that saves every response to your Sheet and alerts you instantly.",
       requirements: [
         { label: "Google (Sheets)", done: connections.googleSheets },
-        { label: "A channel for alerts", done: anyChannel },
+        { label: "A channel for alerts", done: anyChannel, optional: true },
       ],
-      href: null,
-      cta: "Coming soon",
+      href: "/forms",
+      cta: "Create a form",
     },
     {
       id: "reminders",
@@ -92,10 +92,10 @@ export function AutomationGallery({ connections, hubReady }: { connections: Gall
       description: "Polite reminders from your Gmail, plus a one-tap WhatsApp message and UPI link for you to send.",
       requirements: [
         { label: "Google (Gmail)", done: connections.googleEmail },
-        { label: "A channel for your copy", done: anyChannel },
+        { label: "A channel for your copy", done: anyChannel, optional: true },
       ],
-      href: null,
-      cta: "Coming soon",
+      href: "/reminders",
+      cta: "Chase a payment",
     },
   ];
 
