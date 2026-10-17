@@ -6,6 +6,7 @@ import { continueIfBacklogged } from "@/lib/scheduler/continuation";
 import { isCronAuthorised } from "@/lib/scheduler/cron-auth";
 import { sweepUnfannedEvents } from "@/services/notification-service";
 import { runDueChecks } from "@/services/uptime-service";
+import "@/services/workflow-handlers";
 import { drainDueRuns } from "@/services/workflow-service";
 
 export const dynamic = "force-dynamic";

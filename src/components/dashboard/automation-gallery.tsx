@@ -80,10 +80,10 @@ export function AutomationGallery({ connections, hubReady }: { connections: Gall
       description: "A shareable form that saves every response to your Sheet and alerts you instantly.",
       requirements: [
         { label: "Google (Sheets)", done: connections.googleSheets },
-        { label: "A channel for alerts", done: anyChannel },
+        { label: "A channel for alerts", done: anyChannel, optional: true },
       ],
-      href: null,
-      cta: "Coming soon",
+      href: "/forms",
+      cta: "Create a form",
     },
     {
       id: "reminders",

@@ -889,6 +889,8 @@ model Form {
   ackBody        String?
   // Origins allowed to POST from the owner's own site. Empty = any origin.
   allowedOrigins String[] @default([])
+  // Notification channels alerted on each response (owned by the same user; checked on every send).
+  channelIds     String[] @default([])
 
   submissionCount Int @default(0)
 

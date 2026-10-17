@@ -3,6 +3,7 @@ import {
   BellRing,
   Bot,
   CalendarClock,
+  FileSpreadsheet,
   FolderGit2,
   History,
   LayoutDashboard,
@@ -45,6 +46,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: "/notifications", label: "Notification hub", icon: BellRing },
       { href: "/notifications/uptime", label: "Uptime monitors", icon: Radar },
+      { href: "/forms", label: "Forms", icon: FileSpreadsheet },
     ],
   },
   {

@@ -46,6 +46,7 @@ What GreenGrid explicitly does **not** do:
 - [Architecture](#architecture)
 - [Standup automations](#standup-automations)
 - [Notification hub](#notification-hub)
+- [Forms → Google Sheet](#forms--google-sheet)
 - [Roles and access control](#roles-and-access-control)
 - [Local development](#local-development)
 - [Google sign-in setup](#google-sign-in-setup)
@@ -399,6 +400,38 @@ Pages: **Notifications** (`/notifications`) for channels, rules and delivery
 history; **Uptime monitors** (`/notifications/uptime`); **Settings →
 Connections** (`/settings/connections`) for Telegram, Google, the AI key and
 today's free-tier usage.
+
+## Forms → Google Sheet
+
+**Problem it fixes:** form answers sit unread in an inbox, or in a tool you
+forget to check. Every response lands as a row in your own Google Sheet, and
+you're pinged on the channels you pick.
+
+1. Connect Google with Sheets (Settings → Connections).
+2. **Forms → New form**: name it, add up to 20 fields (short/long text, email,
+   phone, number, dropdown, checkbox), pick the channels to alert. GreenGrid
+   creates a Sheet in your Drive (`drive.file`: it can only see files it made)
+   with one column per question.
+3. Share the link `/f/<id>`, or paste the HTML snippet from the form page into
+   your own site after adding its address under *Your website*.
+4. Optional: email each person a confirmation from your Gmail, with
+   `{{field_id}}` placeholders.
+
+**What happens on a response.** It is validated against the form's fields,
+stored, and turned into a workflow run: append the row (retried until it lands,
+since a duplicate row is better than a lost one), send the confirmation
+(at most once), then alert each channel. Rows are appended with
+`valueInputOption=RAW`, so an answer like `=HYPERLINK(…)` stays text. Fields
+lock once a form has responses so the Sheet's columns never shift.
+
+**Spam protection.** A hidden honeypot field, a signed page token that rejects
+submissions under 2 seconds or over 24 hours old, rate limits per IP and per
+form, and an origin allow-list for posts from other sites. Responses are kept
+here for 90 days; the Sheet is the permanent copy.
+
+**Test it:** create a form with a required email, open the link, submit too
+fast with an empty email → field errors; fill it in properly → a new row in
+the Sheet and an alert in Telegram. Pause the form → the link says it's closed.
 
 ## Roles and access control
 
