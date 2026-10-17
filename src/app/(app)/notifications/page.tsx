@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Activity, BellRing, GitBranch, History, Plus, RadioTower, RefreshCw, Send, Trash2, type LucideIcon } from "lucide-react";
+import { Activity, BellRing, GitBranch, History, Pencil, Plus, RadioTower, RefreshCw, Send, Trash2, type LucideIcon } from "lucide-react";
 
 import {
   addEmailChannelAction,
@@ -52,7 +52,7 @@ const CHANNELS_HREF = "/notifications?tab=channels";
 const newRuleHref = (source: RuleSource) => `/notifications?tab=new&source=${source}`;
 
 export default async function NotificationsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
-  const { tab: requestedTab, source: requestedSource } = await searchParams;
+  const { tab: requestedTab, source: requestedSource, edit: editId } = await searchParams;
   const user = await requireUser("notification:manage:own");
   const [preferences, channels, rules, runs, monitors, github, installations, google, slackWorkspaces] = await Promise.all([
     prisma.user.findUnique({ where: { id: user.userId }, select: { defaultTimezone: true } }),
@@ -77,7 +77,10 @@ export default async function NotificationsPage({ searchParams }: { searchParams
     : verifiedChannels.length === 0
       ? "channels"
       : "rules";
-  const ruleSource: RuleSource = requestedSource === "uptime" ? "uptime" : "github";
+  // ?tab=new&edit=<id> opens the same form pre-filled; saving updates that rule.
+  const editing = editId ? rules.find((rule) => rule.id === editId && (rule.source === "GITHUB" || rule.source === "UPTIME")) : undefined;
+  const ruleSource: RuleSource = editing ? (editing.source === "UPTIME" ? "uptime" : "github") : requestedSource === "uptime" ? "uptime" : "github";
+  const editingChannelIds = editing?.channels.map((channel) => channel.id);
   const tabs: Array<{ id: TabId; label: string; icon: LucideIcon; count?: number; attention?: boolean }> = [
     { id: "rules", label: "Rules", icon: BellRing, count: rules.length },
     { id: "new", label: "New rule", icon: Plus },
@@ -162,6 +165,14 @@ export default async function NotificationsPage({ searchParams }: { searchParams
                         </p>
                       </div>
                       <div className="flex shrink-0 flex-wrap gap-2">
+                        {rule.source === "GITHUB" || rule.source === "UPTIME" ? (
+                          <Button asChild size="sm" variant="outline">
+                            <Link href={`/notifications?tab=new&edit=${rule.id}`} scroll={false}>
+                              <Pencil aria-hidden="true" />
+                              Edit
+                            </Link>
+                          </Button>
+                        ) : null}
                         <ActionForm
                           action={toggleRuleAction}
                           fields={{ id: rule.id, enabled: String(!rule.enabled) }}
@@ -190,10 +201,21 @@ export default async function NotificationsPage({ searchParams }: { searchParams
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Plus className="size-4 text-primary" aria-hidden="true" />
-                New rule
+                {editing ? <Pencil className="size-4 text-primary" aria-hidden="true" /> : <Plus className="size-4 text-primary" aria-hidden="true" />}
+                {editing ? `Edit “${editing.name}”` : "New rule"}
               </CardTitle>
-              <CardDescription>Choose what to watch, then where the alert should go.</CardDescription>
+              <CardDescription>
+                {editing ? (
+                  <>
+                    Change what it watches or where it sends.{" "}
+                    <Link href={RULES_HREF} scroll={false} className="underline">
+                      Cancel
+                    </Link>
+                  </>
+                ) : (
+                  "Choose what to watch, then where the alert should go."
+                )}
+              </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-5 pt-0">
               {verifiedChannels.length === 0 ? (
@@ -212,30 +234,33 @@ export default async function NotificationsPage({ searchParams }: { searchParams
                 />
               ) : (
                 <>
-                  <div role="radiogroup" aria-label="Rule source" className="grid gap-3 sm:grid-cols-2">
-                    <SourceOption
-                      href={newRuleHref("github")}
-                      selected={ruleSource === "github"}
-                      icon={GitBranch}
-                      title="GitHub"
-                      description="Pull requests, review requests, failed checks, releases and new issues."
-                    />
-                    <SourceOption
-                      href={newRuleHref("uptime")}
-                      selected={ruleSource === "uptime"}
-                      icon={Activity}
-                      title="Uptime"
-                      description="A site goes down, comes back up, or its certificate is about to expire."
-                    />
-                  </div>
+                  {editing ? null : (
+                    <div role="radiogroup" aria-label="Rule source" className="grid gap-3 sm:grid-cols-2">
+                      <SourceOption
+                        href={newRuleHref("github")}
+                        selected={ruleSource === "github"}
+                        icon={GitBranch}
+                        title="GitHub"
+                        description="Pull requests, review requests, failed checks, releases and new issues."
+                      />
+                      <SourceOption
+                        href={newRuleHref("uptime")}
+                        selected={ruleSource === "uptime"}
+                        icon={Activity}
+                        title="Uptime"
+                        description="A site goes down, comes back up, or its certificate is about to expire."
+                      />
+                    </div>
+                  )}
 
                   {ruleSource === "github" ? (
                     <ActionForm
-                      key="github"
+                      key={editing ? `edit-${editing.id}` : "github"}
                       action={createGitHubRuleAction}
-                      submitLabel="Create rule"
-                      pendingLabel="Creating…"
-                      resetOnSuccess
+                      fields={editing ? { ruleId: editing.id } : undefined}
+                      submitLabel={editing ? "Save rule" : "Create rule"}
+                      pendingLabel={editing ? "Saving…" : "Creating…"}
+                      resetOnSuccess={!editing}
                       successHref={RULES_HREF}
                     >
                       {installations.length === 0 ? (
@@ -250,42 +275,43 @@ export default async function NotificationsPage({ searchParams }: { searchParams
                       <div className="grid gap-5 lg:grid-cols-2">
                         <div className="flex min-w-0 flex-col gap-4">
                           <div className="flex flex-col gap-2"><Label htmlFor="gh-name">Name</Label>
-                            <Input id="gh-name" name="name" defaultValue="GitHub alerts" maxLength={80} required />
+                            <Input id="gh-name" name="name" defaultValue={editing?.name ?? "GitHub alerts"} maxLength={80} required />
                           </div>
                           <fieldset className="flex flex-col gap-2">
                             <legend className="mb-2 text-sm font-medium">Events</legend>
                             {GITHUB_EVENT_TYPES.map((type) => (
-                              <CheckboxField key={type} name="events" value={type} label={EVENT_TYPE_LABELS[type] ?? type} defaultChecked={type !== "issues.opened"} />
+                              <CheckboxField key={type} name="events" value={type} label={EVENT_TYPE_LABELS[type] ?? type} defaultChecked={editing ? editing.filter.events.includes(type) : type !== "issues.opened"} />
                             ))}
                           </fieldset>
                         </div>
                         <div className="flex min-w-0 flex-col gap-4">
                           <div className="flex flex-col gap-2"><Label htmlFor="gh-repos">Repositories (optional)</Label>
-                            <Input id="gh-repos" name="repositories" placeholder="owner/repo, owner/other" maxLength={2000} />
+                            <Input id="gh-repos" name="repositories" defaultValue={editing?.filter.repositories?.join(", ") ?? ""} placeholder="owner/repo, owner/other" maxLength={2000} />
                             <p className="text-xs text-muted-foreground">Leave it blank to cover every repo the app can see.</p>
                           </div>
-                          <ChannelPicker channels={verifiedChannels} />
+                          <ChannelPicker channels={verifiedChannels} selected={editingChannelIds} />
                         </div>
                       </div>
                     </ActionForm>
                   ) : (
                     <ActionForm
-                      key="uptime"
+                      key={editing ? `edit-${editing.id}` : "uptime"}
                       action={createUptimeRuleAction}
-                      submitLabel="Create rule"
-                      pendingLabel="Creating…"
-                      resetOnSuccess
+                      fields={editing ? { ruleId: editing.id } : undefined}
+                      submitLabel={editing ? "Save rule" : "Create rule"}
+                      pendingLabel={editing ? "Saving…" : "Creating…"}
+                      resetOnSuccess={!editing}
                       successHref={RULES_HREF}
                     >
                       <div className="grid gap-5 lg:grid-cols-2">
                         <div className="flex min-w-0 flex-col gap-4">
                           <div className="flex flex-col gap-2"><Label htmlFor="up-name">Name</Label>
-                            <Input id="up-name" name="name" defaultValue="Uptime alerts" maxLength={80} required />
+                            <Input id="up-name" name="name" defaultValue={editing?.name ?? "Uptime alerts"} maxLength={80} required />
                           </div>
                           <fieldset className="flex flex-col gap-2">
                             <legend className="mb-2 text-sm font-medium">Events</legend>
                             {UPTIME_EVENT_TYPES.map((type) => (
-                              <CheckboxField key={type} name="events" value={type} label={EVENT_TYPE_LABELS[type] ?? type} defaultChecked />
+                              <CheckboxField key={type} name="events" value={type} label={EVENT_TYPE_LABELS[type] ?? type} defaultChecked={editing ? editing.filter.events.includes(type) : true} />
                             ))}
                           </fieldset>
                         </div>
@@ -294,7 +320,7 @@ export default async function NotificationsPage({ searchParams }: { searchParams
                             <fieldset className="flex flex-col gap-2">
                               <legend className="mb-2 text-sm font-medium">Monitors (leave all unticked to cover every one)</legend>
                               {monitors.map((monitor) => (
-                                <CheckboxField key={monitor.id} name="monitorIds" value={monitor.id} label={monitor.label} description={monitor.url} />
+                                <CheckboxField key={monitor.id} name="monitorIds" value={monitor.id} label={monitor.label} description={monitor.url} defaultChecked={editing?.filter.monitorIds?.includes(monitor.id) ?? false} />
                               ))}
                             </fieldset>
                           ) : (
@@ -306,7 +332,7 @@ export default async function NotificationsPage({ searchParams }: { searchParams
                               and this rule will cover it automatically.
                             </p>
                           )}
-                          <ChannelPicker channels={verifiedChannels} />
+                          <ChannelPicker channels={verifiedChannels} selected={editingChannelIds} />
                         </div>
                       </div>
                     </ActionForm>
@@ -625,7 +651,14 @@ function SourceOption({
   );
 }
 
-function ChannelPicker({ channels }: { channels: Array<{ id: string; label: string; kind: keyof typeof CHANNEL_KIND_LABELS }> }) {
+function ChannelPicker({
+  channels,
+  selected,
+}: {
+  channels: Array<{ id: string; label: string; kind: keyof typeof CHANNEL_KIND_LABELS }>;
+  /** Pre-ticked channels when editing; otherwise a lone channel is ticked for you. */
+  selected?: string[];
+}) {
   return (
     <fieldset className="flex flex-col gap-2">
       <legend className="mb-2 text-sm font-medium">Send to</legend>
@@ -636,7 +669,7 @@ function ChannelPicker({ channels }: { channels: Array<{ id: string; label: stri
           value={channel.id}
           label={channel.label}
           description={CHANNEL_KIND_LABELS[channel.kind]}
-          defaultChecked={channels.length === 1}
+          defaultChecked={selected ? selected.includes(channel.id) : channels.length === 1}
         />
       ))}
     </fieldset>
