@@ -50,7 +50,7 @@ export function ActionForm({
   });
 
   return (
-    <form ref={formRef} action={formAction} className={cn(children ? "flex flex-col gap-3" : "inline-flex", className)}>
+    <form ref={formRef} action={formAction} className={cn(children ? "flex flex-col gap-4" : "inline-flex", className)}>
       {Object.entries(fields).map(([name, value]) => (
         <input key={name} type="hidden" name={name} value={value} />
       ))}

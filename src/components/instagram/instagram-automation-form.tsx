@@ -54,8 +54,7 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-1.5">
-      <Label htmlFor={htmlFor}>{label}</Label>
+    <div className="flex flex-col gap-2"><Label htmlFor={htmlFor}>{label}</Label>
       {children}
       {error ? (
         <p className="text-xs text-destructive">{error}</p>

@@ -78,8 +78,7 @@ export function ActivityFilters({ repositories }: { repositories: RepositoryOpti
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="repository-filter" className="text-xs text-muted-foreground">
+        <div className="flex flex-col gap-2"><Label htmlFor="repository-filter" className="text-xs text-muted-foreground">
             Repository
           </Label>
           <Select value={repositoryId} onValueChange={(value) => apply({ repositoryId: value })}>
@@ -97,8 +96,7 @@ export function ActivityFilters({ repositories }: { repositories: RepositoryOpti
           </Select>
         </div>
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="from-filter" className="text-xs text-muted-foreground">
+        <div className="flex flex-col gap-2"><Label htmlFor="from-filter" className="text-xs text-muted-foreground">
             From
           </Label>
           <Input
@@ -109,8 +107,7 @@ export function ActivityFilters({ repositories }: { repositories: RepositoryOpti
           />
         </div>
 
-        <div className="flex flex-col gap-1.5">
-          <Label htmlFor="to-filter" className="text-xs text-muted-foreground">
+        <div className="flex flex-col gap-2"><Label htmlFor="to-filter" className="text-xs text-muted-foreground">
             To
           </Label>
           <Input

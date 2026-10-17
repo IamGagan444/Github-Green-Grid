@@ -217,22 +217,18 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
               ) : null}
 
               <ActionForm action={saveAiKeyAction} submitLabel={ai ? "Replace key" : "Verify and save"} pendingLabel="Verifying…" icon={<KeyRound aria-hidden="true" />}>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="ai-label">Provider name</Label>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="flex flex-col gap-2"><Label htmlFor="ai-label">Provider name</Label>
                     <Input id="ai-label" name="label" defaultValue={ai?.label ?? AI_PROVIDER_PRESETS[0].label} maxLength={60} required />
                   </div>
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor="ai-model">Model</Label>
+                  <div className="flex flex-col gap-2"><Label htmlFor="ai-model">Model</Label>
                     <Input id="ai-model" name="model" defaultValue={ai?.model ?? AI_PROVIDER_PRESETS[0].model} maxLength={120} required />
                   </div>
                 </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="ai-base">Base URL (OpenAI-compatible)</Label>
+                <div className="flex flex-col gap-2"><Label htmlFor="ai-base">Base URL (OpenAI-compatible)</Label>
                   <Input id="ai-base" name="baseUrl" type="url" defaultValue={ai?.baseUrl ?? AI_PROVIDER_PRESETS[0].baseUrl} maxLength={300} required />
                 </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor="ai-key">API key</Label>
+                <div className="flex flex-col gap-2"><Label htmlFor="ai-key">API key</Label>
                   <Input id="ai-key" name="apiKey" type="password" autoComplete="off" placeholder={ai ? "Enter a new key to replace it" : ""} maxLength={500} required />
                 </div>
                 <ul className="flex flex-col gap-1 text-xs text-muted-foreground">

@@ -249,20 +249,18 @@ export default async function NotificationsPage({ searchParams }: { searchParams
                       ) : null}
                       <div className="grid gap-5 lg:grid-cols-2">
                         <div className="flex min-w-0 flex-col gap-4">
-                          <div className="flex flex-col gap-1.5">
-                            <Label htmlFor="gh-name">Name</Label>
+                          <div className="flex flex-col gap-2"><Label htmlFor="gh-name">Name</Label>
                             <Input id="gh-name" name="name" defaultValue="GitHub alerts" maxLength={80} required />
                           </div>
-                          <fieldset className="flex flex-col gap-1.5">
-                            <legend className="mb-1.5 text-sm font-medium">Events</legend>
+                          <fieldset className="flex flex-col gap-2">
+                            <legend className="mb-2 text-sm font-medium">Events</legend>
                             {GITHUB_EVENT_TYPES.map((type) => (
                               <CheckboxField key={type} name="events" value={type} label={EVENT_TYPE_LABELS[type] ?? type} defaultChecked={type !== "issues.opened"} />
                             ))}
                           </fieldset>
                         </div>
                         <div className="flex min-w-0 flex-col gap-4">
-                          <div className="flex flex-col gap-1.5">
-                            <Label htmlFor="gh-repos">Repositories (optional)</Label>
+                          <div className="flex flex-col gap-2"><Label htmlFor="gh-repos">Repositories (optional)</Label>
                             <Input id="gh-repos" name="repositories" placeholder="owner/repo, owner/other" maxLength={2000} />
                             <p className="text-xs text-muted-foreground">Leave it blank to cover every repo the app can see.</p>
                           </div>
@@ -281,12 +279,11 @@ export default async function NotificationsPage({ searchParams }: { searchParams
                     >
                       <div className="grid gap-5 lg:grid-cols-2">
                         <div className="flex min-w-0 flex-col gap-4">
-                          <div className="flex flex-col gap-1.5">
-                            <Label htmlFor="up-name">Name</Label>
+                          <div className="flex flex-col gap-2"><Label htmlFor="up-name">Name</Label>
                             <Input id="up-name" name="name" defaultValue="Uptime alerts" maxLength={80} required />
                           </div>
-                          <fieldset className="flex flex-col gap-1.5">
-                            <legend className="mb-1.5 text-sm font-medium">Events</legend>
+                          <fieldset className="flex flex-col gap-2">
+                            <legend className="mb-2 text-sm font-medium">Events</legend>
                             {UPTIME_EVENT_TYPES.map((type) => (
                               <CheckboxField key={type} name="events" value={type} label={EVENT_TYPE_LABELS[type] ?? type} defaultChecked />
                             ))}
@@ -294,8 +291,8 @@ export default async function NotificationsPage({ searchParams }: { searchParams
                         </div>
                         <div className="flex min-w-0 flex-col gap-4">
                           {monitors.length > 0 ? (
-                            <fieldset className="flex flex-col gap-1.5">
-                              <legend className="mb-1.5 text-sm font-medium">Monitors (leave all unticked to cover every one)</legend>
+                            <fieldset className="flex flex-col gap-2">
+                              <legend className="mb-2 text-sm font-medium">Monitors (leave all unticked to cover every one)</legend>
                               {monitors.map((monitor) => (
                                 <CheckboxField key={monitor.id} name="monitorIds" value={monitor.id} label={monitor.label} description={monitor.url} />
                               ))}
@@ -618,8 +615,8 @@ function SourceOption({
 
 function ChannelPicker({ channels }: { channels: Array<{ id: string; label: string; kind: keyof typeof CHANNEL_KIND_LABELS }> }) {
   return (
-    <fieldset className="flex flex-col gap-1.5">
-      <legend className="mb-1.5 text-sm font-medium">Send to</legend>
+    <fieldset className="flex flex-col gap-2">
+      <legend className="mb-2 text-sm font-medium">Send to</legend>
       {channels.map((channel) => (
         <CheckboxField
           key={channel.id}
