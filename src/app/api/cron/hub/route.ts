@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { createLogger } from "@/lib/logging/logger";
 import { continueIfBacklogged } from "@/lib/scheduler/continuation";
 import { isCronAuthorised } from "@/lib/scheduler/cron-auth";
+import { runDueDigests } from "@/services/digest-service";
 import { sweepUnfannedEvents } from "@/services/notification-service";
 import { runDueChecks } from "@/services/uptime-service";
 import { drainDueRuns } from "@/services/workflow-service";
@@ -19,8 +20,9 @@ const BUDGET_MS = 45_000;
 /**
  * Notification hub tick (every 15 minutes):
  *  1. uptime checks that are due (they may produce events);
- *  2. fan out events whose webhook-time fan-out never ran;
- *  3. deliver due retries and unstarted runs, round-robin across users.
+ *  2. morning digests whose time has come (each becomes a run);
+ *  3. fan out events whose webhook-time fan-out never ran;
+ *  4. deliver due retries and unstarted runs, round-robin across users.
  */
 export async function POST(request: NextRequest) {
   if (!isCronAuthorised(request.headers)) {
@@ -31,8 +33,9 @@ export async function POST(request: NextRequest) {
   const deadline = started + BUDGET_MS;
   const run = await prisma.cronRun.create({ data: { job: "hub" }, select: { id: true } });
   try {
-    // Checks get at most half the budget so deliveries always run.
-    const uptime = await runDueChecks(started + BUDGET_MS / 2);
+    // Checks get at most a third of the budget and digests another third, so deliveries always run.
+    const uptime = await runDueChecks(started + BUDGET_MS / 3);
+    const digests = await runDueDigests(started + (2 * BUDGET_MS) / 3);
     const swept = await sweepUnfannedEvents();
     const runs = await drainDueRuns(deadline);
 
@@ -46,9 +49,9 @@ export async function POST(request: NextRequest) {
         skipped: runs.SKIPPED,
       },
     });
-    const continued = continueIfBacklogged("hub", runs.deferred + uptime.deferred, request.headers);
-    const summary = { uptime, swept, runs, continued };
-    log.info("hub tick complete", { ...runs, checked: uptime.checked, changes: uptime.changes, swept, continued });
+    const continued = continueIfBacklogged("hub", runs.deferred + uptime.deferred + digests.deferred, request.headers);
+    const summary = { uptime, digests, swept, runs, continued };
+    log.info("hub tick complete", { ...runs, checked: uptime.checked, changes: uptime.changes, digests: digests.queued, swept, continued });
     return NextResponse.json(summary);
   } catch (error) {
     log.error("hub tick failed", { error: error as Error });

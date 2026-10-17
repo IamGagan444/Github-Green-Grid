@@ -991,6 +991,8 @@ model DigestSettings {
   daysOfWeek    Weekday[] @default([MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY, SUNDAY])
   scheduleTimes String[]  @default(["08:00"])
   maxItems      Int       @default(30)
+  // Notification channels the digest is sent to (owned by the same user; checked on every send).
+  channelIds    String[]  @default([])
   lastRunDate   String?
   lastRunAt     DateTime?
 
