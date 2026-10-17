@@ -278,8 +278,9 @@ owner taps to send.
 
 ### Quick start
 
-The hub page (`/notifications`) has four tabs — **Rules**, **Channels**,
-**GitHub** and **Activity** — selectable by link (`/notifications?tab=channels`).
+The hub page (`/notifications`) has five tabs: **Rules**, **New rule**,
+**Channels**, **GitHub** and **Activity**. Each one has its own link
+(`/notifications?tab=channels`, `/notifications?tab=new&source=uptime`).
 
 1. **Add a channel** (*Channels* tab). Press **Connect a Telegram chat**, then
    press **Start** in the bot chat that opens. The bot replies "✅ Connected to
@@ -289,8 +290,9 @@ The hub page (`/notifications`) has four tabs — **Rules**, **Channels**,
 2. **Link GitHub** (*GitHub* tab, for GitHub events). Connect GitHub in
    Settings, then press **Install on repositories** and pick your
    repositories. Press **Refresh** if the installation does not appear.
-3. **Create a rule** (*Rules* tab). Pick a source (GitHub or Uptime), the
-   events, an optional repository/monitor filter, and the channels to deliver to.
+3. **Create a rule** (*New rule* tab). Pick a source (GitHub or Uptime), the
+   events, an optional repository/monitor filter, and the channels to deliver
+   to. Saving takes you back to the *Rules* tab.
 4. **Watch deliveries** (*Activity* tab). Every event is listed with a
    per-channel result.
 

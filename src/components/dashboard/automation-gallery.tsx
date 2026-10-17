@@ -45,7 +45,7 @@ export function AutomationGallery({ connections, hubReady }: { connections: Gall
         { label: "A channel (Telegram, Discord, Slack or email)", done: anyChannel },
         { label: "GitHub App installed (for GitHub events)", done: connections.github, optional: true },
       ],
-      href: hubReady ? "/notifications" : "/settings/connections",
+      href: hubReady ? "/notifications?tab=rules" : "/notifications?tab=channels",
       cta: hubReady ? "Manage rules" : "Connect a channel",
     },
     {

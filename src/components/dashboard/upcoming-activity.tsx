@@ -40,7 +40,7 @@ export function UpcomingActivity({ schedules }: { schedules: ScheduleWithReposit
           <EmptyState
             icon={CalendarClock}
             title="No schedule configured."
-            description="Create a schedule to have GreenGrid perform repository maintenance for you."
+            description="Set up a schedule and GreenGrid will start committing for you."
             action={
               <Button asChild size="sm">
                 <Link href="/dashboard/schedule">Create schedule</Link>

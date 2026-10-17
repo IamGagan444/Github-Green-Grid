@@ -23,7 +23,7 @@ export function SetupChecklist({ steps }: { steps: SetupStep[] }) {
             <CardTitle>Get started</CardTitle>
             <CardDescription>
               {done === 0
-                ? "Set up GreenGrid in a few steps. Each one unlocks an automation."
+                ? "A few quick steps. Each one switches on another automation."
                 : `${done} of ${steps.length} done. Next: ${next?.label.toLowerCase()}.`}
             </CardDescription>
           </div>

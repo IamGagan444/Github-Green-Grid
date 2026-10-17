@@ -20,7 +20,7 @@ export function ActivityFeed({ items, timezone }: { items: ActivityItem[]; timez
     <Card>
       <CardHeader>
         <CardTitle>Recent activity</CardTitle>
-        <CardDescription>Everything your automations did lately, in one place.</CardDescription>
+        <CardDescription>What your automations did recently.</CardDescription>
       </CardHeader>
       <CardContent className="pt-0">
         {items.length === 0 ? (

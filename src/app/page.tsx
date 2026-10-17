@@ -1,6 +1,7 @@
 import Link from "next/link";
 import {
   ArrowRight,
+  BellRing,
   Bot,
   CalendarClock,
   History,
@@ -72,7 +73,7 @@ const PRODUCTS: Product[] = [
     id: "commits",
     icon: <CalendarClock className="size-5 text-primary" aria-hidden="true" />,
     title: "Commit activity",
-    tagline: "Lightweight, scheduled repository maintenance through GitHub's API.",
+    tagline: "Small, real commits to a repo you choose, on the days you pick.",
     flow: [
       { icon: <CalendarClock className="size-4" aria-hidden="true" />, label: "Schedule" },
       { icon: <GithubIcon className="size-4" />, label: "Repository" },
@@ -84,13 +85,29 @@ const PRODUCTS: Product[] = [
       "Full history of every scheduled run",
     ],
   },
+  {
+    id: "alerts",
+    icon: <BellRing className="size-5 text-primary" aria-hidden="true" />,
+    title: "Notification hub",
+    tagline: "A new PR or a site going down shows up in Telegram within seconds.",
+    flow: [
+      { icon: <GithubIcon className="size-4" />, label: "GitHub or uptime" },
+      { icon: <BellRing className="size-4" aria-hidden="true" />, label: "Your rules" },
+      { icon: <MessageCircle className="size-4" aria-hidden="true" />, label: "Telegram, Slack…" },
+    ],
+    points: [
+      "Pull requests, failed checks, releases and issues",
+      "One alert when a site goes down, not one every 15 minutes",
+      "Telegram, Discord, Slack or your own Gmail, all free",
+    ],
+  },
 ];
 
 const STEPS = [
   { title: "Sign in with Google", description: "One account for everything. No passwords to manage." },
-  { title: "Connect only what you need", description: "GitHub, Slack or Instagram, each with least-privilege access." },
-  { title: "Create an automation", description: "A short form per automation type, with a live preview." },
-  { title: "Watch it run", description: "One dashboard shows every run, DM and failure as it happens." },
+  { title: "Connect only what you need", description: "GitHub, Slack, Instagram or Telegram. Each gets only the access it needs." },
+  { title: "Create an automation", description: "Each one is a short form, and you can preview it before saving." },
+  { title: "Watch it run", description: "The dashboard shows every run, DM and failure as it happens." },
 ];
 
 const TRUST = [
@@ -107,7 +124,7 @@ const TRUST = [
   {
     icon: LayoutDashboard,
     title: "One dashboard",
-    description: "Every automation, run and connected account in one place.",
+    description: "Your automations, their runs and your connected accounts on one screen.",
   },
 ];
 
@@ -132,15 +149,16 @@ export default async function LandingPage() {
               <GithubIcon className="size-3.5" />
               <SlackIcon className="size-3.5" />
               <InstagramIcon className="size-3.5" />
-              Standups · Instagram auto-DM · Commit activity
+              Standups · Instagram auto-DM · Commit activity · Alerts
             </p>
             <h1 className="mt-5 text-3xl font-semibold tracking-tight text-balance sm:text-5xl">
               Automate the busywork around your code and your content.
             </h1>
             <p className="mt-5 max-w-2xl text-base text-muted-foreground text-pretty sm:text-lg">
               GreenGrid posts your daily standup to Slack from your commits, DMs a link to everyone who
-              comments a keyword on your reels, and keeps your repositories active on schedule. You
-              set each one up once and follow them all from a single dashboard.
+              comments a keyword on your reels, keeps your repositories active on schedule, and pings
+              you in Telegram when a PR opens or your site goes down. Set each one up once and forget
+              about it.
             </p>
 
             <div className="mt-8 flex flex-wrap gap-3">
@@ -159,13 +177,13 @@ export default async function LandingPage() {
       <section id="automations" aria-labelledby="automations-heading" className="scroll-mt-16 border-b border-border">
         <div className="mx-auto w-full max-w-6xl px-4 py-14 sm:px-6">
           <h2 id="automations-heading" className="text-2xl font-semibold tracking-tight">
-            Three automations, one place
+            Pick the ones you need
           </h2>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Use one or all of them. Each connects only the account it needs.
+            Use one or all four. Each one only asks for the account it actually needs.
           </p>
 
-          <ul className="mt-8 grid gap-4 lg:grid-cols-3">
+          <ul className="mt-8 grid gap-4 md:grid-cols-2">
             {PRODUCTS.map((product) => (
               <li key={product.id}>
                 <Card className="flex h-full flex-col p-6">

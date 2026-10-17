@@ -42,7 +42,7 @@ export default async function ExecutionsPage({ searchParams }: { searchParams: S
 
   return (
     <>
-      <Header title="Executions" description="Every standup run: what was found, generated and posted." />
+      <Header title="Executions" description="Each standup run: the commits it found, what the AI wrote and what got posted." />
       <div className="flex flex-col gap-4 px-4 py-6 sm:px-6">
         <ExecutionFilters automations={automations} basePath="/executions" />
         {result.items.length === 0 ? (

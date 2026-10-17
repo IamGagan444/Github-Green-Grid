@@ -22,7 +22,7 @@ export default async function SchedulePage() {
     <>
       <Header
         title="Schedule"
-        description="Decide when GreenGrid performs repository maintenance for you."
+        description="Pick the days and times GreenGrid commits for you."
       />
 
       <div className="flex flex-col gap-5 px-4 py-6 sm:px-6">
