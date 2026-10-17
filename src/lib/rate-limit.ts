@@ -51,6 +51,8 @@ export const RATE_LIMITS = {
   githubWebhook: { limit: 600, windowSeconds: 60 },
   // Telegram delivers from its own small IP range; the secret header is the real gate.
   telegramWebhook: { limit: 600, windowSeconds: 60 },
+  // Meta delivers WhatsApp webhooks from its own pool; the signature is the real gate.
+  whatsappWebhook: { limit: 600, windowSeconds: 60 },
   // Public form endpoints (per client IP, and per form).
   formSubmitIp: { limit: 5, windowSeconds: 60 },
   formSubmitForm: { limit: 60, windowSeconds: 3600 },

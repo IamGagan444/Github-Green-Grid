@@ -12,12 +12,13 @@ import {
   type ChannelConfig,
 } from "@/lib/hub/channel-config";
 import { hubMessage, md, type HubMessage } from "@/lib/hub/message";
-import { renderDiscord, renderEmail, renderSlack, renderTelegram } from "@/lib/hub/render";
+import { renderDiscord, renderEmail, renderSlack, renderTelegram, renderWhatsApp } from "@/lib/hub/render";
 import { localDayKey } from "@/lib/automation/schedule";
 import { createLogger } from "@/lib/logging/logger";
 import { waitForTokens } from "@/lib/rate-limit";
 import type { Actor } from "@/lib/rbac";
 import { sendTelegramMessage } from "@/lib/telegram/client";
+import { sendWhatsAppTemplate } from "@/lib/whatsapp/client";
 import { recordAudit } from "@/services/audit-service";
 import { createGooglePort, getGoogleIntegration } from "@/services/google-service";
 import { reserve } from "@/services/quota-service";
@@ -147,6 +148,29 @@ async function deliverEmail(channel: ChannelRow, message: HubMessage): Promise<s
   }
 }
 
+async function deliverWhatsApp(channel: ChannelRow, message: HubMessage): Promise<string> {
+  const { phone } = readConfig("WHATSAPP", channel.configEncrypted);
+  // Cloud API allows ~80 messages/s per number, and about one message every
+  // six seconds to the same recipient before it starts rejecting (131056).
+  const slot = await waitForTokens(
+    [
+      { key: "wa:global", options: { ratePerSecond: 50, burst: 50 } },
+      { key: `wa:to:${fingerprint(phone).slice(0, 32)}`, options: { ratePerSecond: 1 / 6, burst: 2 } },
+    ],
+    MAX_RATE_WAIT_MS,
+  );
+  if (!slot.ok) throw new AppError("CHANNEL_RATE_LIMITED", "whatsapp send slot unavailable", { retryAfterMs: slot.retryAfterMs });
+
+  // Every template message is billed by Meta, so the daily caps are checked first.
+  const reservation = await reserve("WHATSAPP_MESSAGES", channel.userId, 1);
+  try {
+    return await sendWhatsAppTemplate({ to: phone, parameters: renderWhatsApp(message) });
+  } catch (error) {
+    await reservation.release();
+    throw error;
+  }
+}
+
 /** Sends one message to one channel. Throws AppErrors classified for the workflow engine. */
 export async function deliverToChannel(channel: ChannelRow, message: HubMessage): Promise<{ externalId: string }> {
   let externalId: string;
@@ -162,6 +186,9 @@ export async function deliverToChannel(channel: ChannelRow, message: HubMessage)
       break;
     case "EMAIL":
       externalId = await deliverEmail(channel, message);
+      break;
+    case "WHATSAPP":
+      externalId = await deliverWhatsApp(channel, message);
       break;
   }
   await prisma.notificationChannel.updateMany({
@@ -358,7 +385,8 @@ export async function deleteChannel(actor: Actor, channelId: string): Promise<vo
   await prisma.notificationChannel.delete({ where: { id: channel.id } });
   await recordAudit({
     actorUserId: actor.userId,
-    action: channel.kind === "TELEGRAM" ? "TELEGRAM_DISCONNECTED" : "CHANNEL_DELETED",
+    action:
+      channel.kind === "TELEGRAM" ? "TELEGRAM_DISCONNECTED" : channel.kind === "WHATSAPP" ? "WHATSAPP_DISCONNECTED" : "CHANNEL_DELETED",
     targetType: "NotificationChannel",
     targetId: channel.id,
     metadata: { kind: channel.kind },

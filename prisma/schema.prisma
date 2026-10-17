@@ -54,6 +54,7 @@ model User {
   notificationEvents   NotificationEvent[]
   workflowRuns         WorkflowRun[]
   telegramLinkTokens   TelegramLinkToken[]
+  whatsAppLinkTokens   WhatsAppLinkToken[]
   githubInstallations  GitHubInstallation[]
   googleIntegration    GoogleIntegration?
   linkedinIntegration  LinkedInIntegration?
@@ -734,6 +735,24 @@ model TelegramLinkToken {
   @@map("telegram_link_tokens")
 }
 
+/// Single-use code a user sends to the GreenGrid WhatsApp number to prove they
+/// own the phone. Sending it opens a free, user-initiated conversation.
+model WhatsAppLinkToken {
+  id         String    @id @default(cuid())
+  userId     String
+  // SHA-256 of the code; the raw code only exists in the wa.me link.
+  tokenHash  String    @unique
+  expiresAt  DateTime
+  consumedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+  @@map("whatsapp_link_tokens")
+}
+
 /// A GitHub App installation. Webhook deliveries carry the installation id,
 /// which routes the event to the GreenGrid user who installed the App.
 model GitHubInstallation {
@@ -1252,6 +1271,8 @@ enum AuditAction {
   ADMIN_ACTION
   TELEGRAM_CONNECTED
   TELEGRAM_DISCONNECTED
+  WHATSAPP_CONNECTED
+  WHATSAPP_DISCONNECTED
   GOOGLE_CONNECTED
   GOOGLE_DISCONNECTED
   GOOGLE_REVOKED
@@ -1274,6 +1295,7 @@ enum ChannelKind {
   DISCORD_WEBHOOK
   SLACK
   EMAIL
+  WHATSAPP
 }
 
 enum NotificationSource {
@@ -1355,6 +1377,7 @@ enum QuotaScope {
   YOUTUBE_UNITS
   EMAILS
   TELEGRAM_MESSAGES
+  WHATSAPP_MESSAGES
 }
 
 enum Weekday {

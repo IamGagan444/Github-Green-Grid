@@ -221,6 +221,38 @@ export function renderSlack(message: HubMessage): SlackRendered {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// WhatsApp (approved template, two body parameters)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const WHATSAPP_TITLE_MAX = 150;
+const WHATSAPP_DETAILS_MAX = 700;
+
+/**
+ * Template parameters may not contain newlines, tabs or more than four
+ * consecutive spaces (Cloud API error 132018), so everything is flattened.
+ * WhatsApp has no rich formatting here; links are kept as plain URLs.
+ */
+function flattenForTemplate(value: string): string {
+  return value
+    .replace(/\t/g, " ")
+    .replace(/[\r\n]+/g, " · ")
+    .replace(/ {2,}/g, " ")
+    .replace(/^ · | · $/g, "")
+    .trim();
+}
+
+export function renderWhatsApp(message: HubMessage): [title: string, details: string] {
+  const title = clip(flattenForTemplate(`${SEVERITY_EMOJI[message.severity]} ${message.title}`), WHATSAPP_TITLE_MAX);
+  const parts = parseBlocks(message.body).flatMap((block) =>
+    block.type === "list" ? block.items.map((item) => `• ${inlineToPlain(item)}`) : block.lines.map(inlineToPlain),
+  );
+  const links = [...message.buttons, ...message.waLinks].map((button) => `${button.label}: ${button.url}`);
+  const details = clip(flattenForTemplate([...parts, ...links, message.footer ?? ""].filter(Boolean).join("\n")), WHATSAPP_DETAILS_MAX);
+  // Empty parameters are rejected, so a title-only message still sends something readable.
+  return [title, details || "Open GreenGrid for details."];
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Email (HTML + plain text)
 // ─────────────────────────────────────────────────────────────────────────────
 

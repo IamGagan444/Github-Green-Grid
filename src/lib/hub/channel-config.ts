@@ -4,7 +4,7 @@ import type { ChannelKind } from "@/generated/prisma/enums";
 
 /**
  * Per-kind channel configuration. Stored encrypted (it contains the Discord
- * webhook secret, chat ids and addresses) and validated on every read.
+ * webhook secret, chat ids, phone numbers and addresses) and validated on every read.
  */
 
 export const DISCORD_WEBHOOK_PATTERN =
@@ -31,6 +31,7 @@ export const channelConfigSchemas = {
     channelName: z.string().max(80),
   }),
   EMAIL: z.object({ to: emailAddressSchema }),
+  WHATSAPP: z.object({ phone: z.string().regex(/^\+[1-9]\d{6,14}$/, "Use the international format, e.g. +919876543210") }),
 } satisfies Record<ChannelKind, z.ZodType>;
 
 export type ChannelConfig<K extends ChannelKind> = z.infer<(typeof channelConfigSchemas)[K]>;
@@ -48,6 +49,8 @@ export function channelIdentity(kind: ChannelKind, config: unknown): string {
     }
     case "EMAIL":
       return `email:${channelConfigSchemas.EMAIL.parse(config).to}`;
+    case "WHATSAPP":
+      return `whatsapp:${channelConfigSchemas.WHATSAPP.parse(config).phone}`;
   }
 }
 
@@ -56,4 +59,5 @@ export const CHANNEL_KIND_LABELS: Record<ChannelKind, string> = {
   DISCORD_WEBHOOK: "Discord",
   SLACK: "Slack",
   EMAIL: "Email",
+  WHATSAPP: "WhatsApp",
 };

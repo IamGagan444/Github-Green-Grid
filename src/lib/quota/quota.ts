@@ -3,9 +3,9 @@ import { AppError } from "@/lib/errors";
 import { addDaysToDayKey, formatDayKey, getWallClock, zonedTimeToUtc } from "@/lib/schedule/timezone";
 
 /**
- * Daily metering of shared free-tier quotas (YouTube API units, Gmail sends,
- * Telegram messages). Each reservation is a compare-and-swap increment that
- * only succeeds while `used + units <= cap`, so concurrent workers can never
+ * Daily metering of shared quotas (YouTube API units, Gmail sends, Telegram
+ * and WhatsApp messages). Each reservation is a compare-and-swap increment
+ * that only succeeds while `used + units <= cap`, so concurrent workers can never
  * overshoot a cap. A per-user reservation is taken first, then the global one;
  * if the global cap is full the user's reservation is given back.
  */
@@ -17,6 +17,7 @@ const RESET_TIMEZONE: Record<QuotaScope, string> = {
   YOUTUBE_UNITS: "America/Los_Angeles",
   EMAILS: "UTC",
   TELEGRAM_MESSAGES: "UTC",
+  WHATSAPP_MESSAGES: "UTC",
 };
 
 export function quotaDay(scope: QuotaScope, now: Date): string {
