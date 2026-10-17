@@ -52,13 +52,13 @@ export function AutomationGallery({ connections, hubReady }: { connections: Gall
       id: "digest",
       icon: Newspaper,
       title: "AI morning digest",
-      description: "RSS, YouTube, GitHub releases and Hacker News, summarised by your own AI key every morning.",
+      description: "Blogs, YouTube, GitHub releases and Hacker News in one message each morning, summed up by your own AI key.",
       requirements: [
         { label: "Telegram or another channel", done: anyChannel },
         { label: "Your AI key", done: connections.aiKey, optional: true },
       ],
-      href: null,
-      cta: "Coming next",
+      href: "/digest",
+      cta: "Set up digest",
     },
     {
       id: "crosspost",

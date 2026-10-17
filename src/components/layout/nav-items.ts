@@ -9,6 +9,7 @@ import {
   IndianRupee,
   LayoutDashboard,
   MessageCircle,
+  Newspaper,
   Plug,
   Radar,
   Settings,
@@ -47,6 +48,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: "/notifications", label: "Notification hub", icon: BellRing },
       { href: "/notifications/uptime", label: "Uptime monitors", icon: Radar },
+      { href: "/digest", label: "Morning digest", icon: Newspaper },
       { href: "/forms", label: "Forms", icon: FileSpreadsheet },
       { href: "/reminders", label: "Payment reminders", icon: IndianRupee },
     ],

@@ -46,6 +46,7 @@ What GreenGrid explicitly does **not** do:
 - [Architecture](#architecture)
 - [Standup automations](#standup-automations)
 - [Notification hub](#notification-hub)
+- [Morning digest](#morning-digest)
 - [Forms → Google Sheet](#forms--google-sheet)
 - [Payment reminders](#payment-reminders)
 - [Roles and access control](#roles-and-access-control)
@@ -401,6 +402,49 @@ Pages: **Notifications** (`/notifications`) for channels, rules and delivery
 history; **Uptime monitors** (`/notifications/uptime`); **Settings →
 Connections** (`/settings/connections`) for Telegram, Google, the AI key and
 today's free-tier usage.
+
+## Morning digest
+
+**Problem it fixes:** checking blogs, YouTube, GitHub releases and Hacker News
+one by one every morning. GreenGrid sends one short message with only what's
+new, to the channels you pick.
+
+Set it up at **Morning digest** (`/digest`):
+
+1. **When and where.** A time, the days, your time zone, and one or more
+   working channels (Telegram, WhatsApp, Slack or email).
+2. **Sources** (up to 10), all free public feeds, no API keys:
+
+   | Source          | What you paste                         | Read from                                |
+   | --------------- | -------------------------------------- | ---------------------------------------- |
+   | RSS / blog      | `https://example.com/feed.xml`         | the feed (RSS 2.0, RSS 1.0 or Atom)      |
+   | YouTube channel | `UC…` channel ID or `/channel/UC…` URL | `youtube.com/feeds/videos.xml`           |
+   | GitHub releases | `owner/repo`                           | `github.com/<owner>/<repo>/releases.atom` |
+   | Hacker News     | how many top stories (1–10)            | the official Firebase API                |
+
+   Each source is read once when added, so a wrong address fails right away.
+3. **Optional AI summary.** With your own AI key (Settings → Connections) the
+   digest starts with two to four sentences about the day's headlines. Only
+   titles are sent to the AI, framed as data. Without a key, or if the AI call
+   fails, the digest still arrives, just without the summary.
+
+**How it runs.** The hub cron (every 15 minutes) builds each digest whose time
+has come, up to three hours late; after that it waits for the next day.
+Feeds are fetched through `safeFetch` (public hosts only, 1 MB, 10 s) with
+`ETag` / `If-Modified-Since`. Each source contributes its newest five unseen
+items; everything currently in the feed is then marked seen (the newest 300
+hashes are kept), so a busy feed never builds a backlog. The digest becomes a
+workflow run keyed `digest:<user>:<day>:<time>`, so it is sent once per slot
+and retried per channel like any other alert. Items are only marked seen after
+that run exists. XML entities declared in a DOCTYPE are never expanded.
+
+**On demand.** **Send now** on the page, or `/digest` in the Telegram bot,
+sends one immediately (at most one per ten minutes). If nothing is new it says
+so instead of staying silent.
+
+**Test it:** add Hacker News (5) and a GitHub repo, pick Telegram, press
+**Send now** → the digest arrives with links. Press it again right away → "You
+just got one". Remove your AI key → the next digest arrives without the summary.
 
 ## Forms → Google Sheet
 
