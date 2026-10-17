@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 export interface GalleryConnections {
   telegram: boolean;
   discord: boolean;
+  linkedin: boolean;
   googleSheets: boolean;
   googleEmail: boolean;
   aiKey: boolean;
@@ -64,14 +65,14 @@ export function AutomationGallery({ connections, hubReady }: { connections: Gall
       id: "crosspost",
       icon: Repeat2,
       title: "Cross-poster",
-      description: "New YouTube video or blog post → AI-drafted posts for LinkedIn, Telegram and Discord, with approval.",
+      description: "New YouTube video or blog post → AI-drafted LinkedIn post and announcements, posted when you approve.",
       requirements: [
-        { label: "Telegram (for approvals)", done: connections.telegram },
-        { label: "LinkedIn", done: false },
+        { label: "Telegram (for approvals)", done: connections.telegram, optional: true },
+        { label: "LinkedIn", done: connections.linkedin, optional: true },
         { label: "Your AI key", done: connections.aiKey, optional: true },
       ],
-      href: null,
-      cta: "Coming next",
+      href: "/crosspost",
+      cta: "Set up cross-posting",
     },
     {
       id: "forms",

@@ -49,6 +49,7 @@ What GreenGrid explicitly does **not** do:
 - [Morning digest](#morning-digest)
 - [Forms → Google Sheet](#forms--google-sheet)
 - [Payment reminders](#payment-reminders)
+- [Cross-poster](#cross-poster)
 - [Roles and access control](#roles-and-access-control)
 - [Local development](#local-development)
 - [Google sign-in setup](#google-sign-in-setup)
@@ -513,6 +514,48 @@ Amounts are stored as integers in minor units and formatted per currency
 and number, due today → press **Remind now** → the email arrives in your
 inbox, and Telegram shows the copy with the WhatsApp button. Mark it paid →
 no more reminders.
+
+## Cross-poster
+
+**Problem it fixes:** after publishing a video or blog post, rewriting it for
+LinkedIn and telling everyone takes longer than it should. GreenGrid notices
+the new post, drafts the LinkedIn post and a short announcement, and posts
+when you tap Approve.
+
+1. **LinkedIn app (operator, once).** At <https://www.linkedin.com/developers/apps>
+   create an app, add the products **Sign In with LinkedIn using OpenID
+   Connect** and **Share on LinkedIn**, add the redirect URL
+   `<NEXT_PUBLIC_APP_URL>/api/integrations/linkedin/callback`, and set
+   `LINKEDIN_CLIENT_ID` / `LINKEDIN_CLIENT_SECRET`. Scopes requested:
+   `openid profile w_member_social`. Without it, the cross-poster still
+   announces on the user's own channels.
+2. **Connect LinkedIn** (Settings → Connections). Tokens last about 60 days;
+   the card shows when it expires and offers Reconnect.
+3. **Cross-poster** (`/crosspost`) → **Watch a source**: a YouTube channel ID
+   or a blog's RSS feed, where to post (LinkedIn and/or any of your channels),
+   and whether to ask first (default) or post automatically.
+
+**How it runs.** The hub cron polls each source every 30 minutes (conditional
+GET, the same fetcher as the digest; failing sources back off up to six
+hours). Only items published after the source was added are considered, at
+most three per poll, so adding a channel never floods LinkedIn. Each new item
+gets drafts from the user's own AI key (title only, framed as data, JSON
+output, with a plain fallback when there's no key or the reply is unusable).
+
+- **Ask first:** an approval card arrives in Telegram with the drafts and
+  **Approve** / **Reject** buttons, and the item waits on the page where the
+  drafts can be edited. Approval is a compare-and-swap, so two taps post once.
+  Only the owner's own linked chat can approve.
+- **Publish** is a `CROSSPOST_PUBLISH` run keyed `crosspost:<item>`:
+  `linkedin:post` is at-most-once (a post LinkedIn may have created is never
+  retried; only a definite 4xx is), then the announcement goes to each chosen
+  channel. Post text is escaped for LinkedIn's reserved characters, and the
+  link is attached as an article card.
+
+**Test it:** connect LinkedIn and Telegram, watch your own YouTube channel (or
+a blog you control), publish something → within 30 minutes an approval card
+arrives in Telegram → tap **Approve** → the post appears on your LinkedIn and
+the announcement in your channels.
 
 ## Roles and access control
 

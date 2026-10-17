@@ -130,7 +130,7 @@ export async function deleteDigestSource(actor: Actor, sourceId: string): Promis
 // Fetching
 // ─────────────────────────────────────────────────────────────────────────────
 
-interface FetchResult {
+export interface FetchResult {
   items: FeedItem[];
   notModified: boolean;
   etag: string | null;
@@ -164,7 +164,8 @@ async function fetchHackerNews(topN: number): Promise<FetchResult> {
   return { items: items.filter((item): item is FeedItem => item !== null), notModified: false, etag: null, lastModified: null };
 }
 
-async function fetchSource(source: { kind: DigestSourceKind; config: unknown; etag: string | null; lastModified: string | null }): Promise<FetchResult> {
+/** Reads one source with conditional GET. Shared with the cross-poster. */
+export async function fetchSource(source: { kind: DigestSourceKind; config: unknown; etag: string | null; lastModified: string | null }): Promise<FetchResult> {
   try {
     if (source.kind === "HACKER_NEWS") return await fetchHackerNews(sourceConfigSchemas.HACKER_NEWS.parse(source.config).topN);
 

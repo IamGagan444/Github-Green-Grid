@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Bot, KeyRound, Mail, MessageSquare, Send, Sparkles, Trash2, Unplug } from "lucide-react";
+import { KeyRound, Mail, MessageSquare, Send, Share2, Sparkles, Trash2, Unplug } from "lucide-react";
 
 import { deleteAiKeyAction, disconnectGoogleAction, saveAiKeyAction } from "@/app/actions/connections";
+import { disconnectLinkedInAction } from "@/app/actions/crosspost";
 import { ActionForm } from "@/components/hub/action-form";
 import { GoogleIcon } from "@/components/icons/google-icon";
 import { Header } from "@/components/layout/header";
@@ -17,9 +18,11 @@ import { AI_PROVIDER_PRESETS } from "@/lib/ai/port";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { formatDate } from "@/lib/format";
+import { isLinkedInConfigured } from "@/lib/linkedin/client";
 import { isTelegramConfigured } from "@/lib/telegram/client";
 import { getAiCredential } from "@/services/ai-credential-service";
 import { getGoogleIntegration } from "@/services/google-service";
+import { getLinkedInIntegration } from "@/services/linkedin-service";
 import { getUsageMeters } from "@/services/quota-service";
 
 export const metadata: Metadata = { title: "Connections" };
@@ -39,7 +42,7 @@ const NOTICES: Record<string, string> = {
 export default async function ConnectionsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const user = await requireUser("settings:manage:own");
   const query = await searchParams;
-  const [google, ai, telegramChats, discordCount, meters] = await Promise.all([
+  const [google, ai, telegramChats, discordCount, meters, linkedin] = await Promise.all([
     getGoogleIntegration(user.userId),
     getAiCredential(user.userId),
     prisma.notificationChannel.findMany({
@@ -49,9 +52,12 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
     }),
     prisma.notificationChannel.count({ where: { userId: user.userId, kind: "DISCORD_WEBHOOK" } }),
     getUsageMeters(user.userId),
+    getLinkedInIntegration(user.userId),
   ]);
   const telegramConfigured = isTelegramConfigured();
-  const notice = query.google ? NOTICES[query.google] : query.telegram ? NOTICES[query.telegram] : undefined;
+  const linkedInConfigured = isLinkedInConfigured();
+  const noticeKey = query.google ?? query.telegram ?? query.linkedin;
+  const notice = noticeKey ? NOTICES[noticeKey] : undefined;
 
   return (
     <>
@@ -169,16 +175,45 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
             </CardContent>
           </Card>
 
-          {/* LinkedIn placeholder */}
-          <Card className="opacity-80">
+          {/* LinkedIn */}
+          <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Bot className="size-4 text-muted-foreground" aria-hidden="true" />
+                <Share2 className="size-4 text-primary" aria-hidden="true" />
                 LinkedIn
-                <Badge variant="outline">With the cross-poster</Badge>
+                {linkedin.connected ? <Badge variant="success">Connected</Badge> : linkedin.status === "REVOKED" ? <Badge variant="destructive">Expired</Badge> : null}
               </CardTitle>
-              <CardDescription>Post to your own LinkedIn profile. Arrives with the cross-poster automation.</CardDescription>
+              <CardDescription>
+                Lets the cross-poster publish on your own profile. LinkedIn tokens last about two months; reconnect when it expires.
+              </CardDescription>
             </CardHeader>
+            <CardContent className="flex flex-col gap-3 pt-0">
+              {linkedin.connected ? (
+                <p className="text-sm">
+                  {linkedin.name ?? "Your profile"}
+                  {linkedin.expiresAt ? <span className="text-xs text-muted-foreground"> · expires {formatDate(linkedin.expiresAt)}</span> : null}
+                </p>
+              ) : null}
+              {linkedInConfigured ? (
+                <div className="flex flex-wrap gap-2">
+                  <Button asChild size="sm" variant={linkedin.connected ? "outline" : "default"}>
+                    <a href="/api/integrations/linkedin/connect?returnTo=/settings/connections">{linkedin.connected ? "Reconnect" : "Connect LinkedIn"}</a>
+                  </Button>
+                  {linkedin.connected ? (
+                    <ConfirmAction
+                      action={disconnectLinkedInAction}
+                      triggerLabel="Disconnect"
+                      triggerIcon={<Unplug aria-hidden="true" />}
+                      title="Disconnect LinkedIn?"
+                      description="The cross-poster stops posting to LinkedIn. Posts already published stay up."
+                      confirmLabel="Disconnect LinkedIn"
+                    />
+                  ) : null}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">LinkedIn isn&apos;t set up on this server.</p>
+              )}
+            </CardContent>
           </Card>
 
           {/* AI */}

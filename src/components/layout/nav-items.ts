@@ -12,6 +12,7 @@ import {
   Newspaper,
   Plug,
   Radar,
+  Repeat2,
   Settings,
   ShieldCheck,
 } from "lucide-react";
@@ -51,6 +52,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { href: "/digest", label: "Morning digest", icon: Newspaper },
       { href: "/forms", label: "Forms", icon: FileSpreadsheet },
       { href: "/reminders", label: "Payment reminders", icon: IndianRupee },
+      { href: "/crosspost", label: "Cross-poster", icon: Repeat2 },
     ],
   },
   {

@@ -6,8 +6,9 @@ import { createLogger } from "@/lib/logging/logger";
 import { rateLimit, rateLimitHeaders, RATE_LIMITS } from "@/lib/rate-limit";
 import { isTelegramWebhookAuthorised, telegramUpdateSchema } from "@/lib/telegram/bot";
 import { processTelegramUpdate } from "@/services/telegram-service";
-// Registers the /digest command handler.
+// Registers the /digest command and the cross-post Approve / Reject buttons.
 import "@/services/digest-service";
+import "@/services/workflow-handlers";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

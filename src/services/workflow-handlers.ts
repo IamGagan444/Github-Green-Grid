@@ -7,3 +7,4 @@ import "server-only";
  */
 import "@/services/form-service";
 import "@/services/reminder-service";
+import "@/services/crosspost-service";
