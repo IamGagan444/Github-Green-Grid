@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { KeyRound, Mail, MessageSquare, Send, Share2, Sparkles, Trash2, Unplug } from "lucide-react";
+import { KeyRound, Mail, MessageCircle, MessageSquare, Send, Share2, Sparkles, Trash2, Unplug } from "lucide-react";
 
 import { deleteAiKeyAction, disconnectGoogleAction, saveAiKeyAction } from "@/app/actions/connections";
 import { disconnectLinkedInAction } from "@/app/actions/crosspost";
@@ -20,6 +20,7 @@ import { prisma } from "@/lib/db";
 import { formatDate } from "@/lib/format";
 import { isLinkedInConfigured } from "@/lib/linkedin/client";
 import { isTelegramConfigured } from "@/lib/telegram/client";
+import { isWhatsAppConfigured } from "@/lib/whatsapp/client";
 import { getAiCredential } from "@/services/ai-credential-service";
 import { getGoogleIntegration } from "@/services/google-service";
 import { getLinkedInIntegration } from "@/services/linkedin-service";
@@ -42,21 +43,23 @@ const NOTICES: Record<string, string> = {
 export default async function ConnectionsPage({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const user = await requireUser("settings:manage:own");
   const query = await searchParams;
-  const [google, ai, telegramChats, discordCount, meters, linkedin] = await Promise.all([
+  const [google, ai, chats, meters, linkedin] = await Promise.all([
     getGoogleIntegration(user.userId),
     getAiCredential(user.userId),
     prisma.notificationChannel.findMany({
-      where: { userId: user.userId, kind: "TELEGRAM" },
-      select: { id: true, label: true, verified: true, createdAt: true },
+      where: { userId: user.userId, kind: { in: ["TELEGRAM", "WHATSAPP"] } },
+      select: { id: true, kind: true, label: true, verified: true, createdAt: true },
       orderBy: { createdAt: "asc" },
     }),
-    prisma.notificationChannel.count({ where: { userId: user.userId, kind: "DISCORD_WEBHOOK" } }),
     getUsageMeters(user.userId),
     getLinkedInIntegration(user.userId),
   ]);
+  const telegramChats = chats.filter((chat) => chat.kind === "TELEGRAM");
+  const whatsAppNumbers = chats.filter((chat) => chat.kind === "WHATSAPP");
   const telegramConfigured = isTelegramConfigured();
+  const whatsAppConfigured = isWhatsAppConfigured();
   const linkedInConfigured = isLinkedInConfigured();
-  const noticeKey = query.google ?? query.telegram ?? query.linkedin;
+  const noticeKey = query.google ?? query.telegram ?? query.whatsapp ?? query.linkedin;
   const notice = noticeKey ? NOTICES[noticeKey] : undefined;
 
   return (
@@ -71,7 +74,6 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
         {notice ? <p className="rounded-md border border-border bg-secondary/40 px-3 py-2 text-sm">{notice}</p> : null}
 
         <div className="grid gap-5 lg:grid-cols-2">
-
           {/* Telegram */}
           <Card>
             <CardHeader>
@@ -108,6 +110,45 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">The Telegram bot is not configured on this server.</p>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* WhatsApp */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <MessageCircle className="size-4 text-primary" aria-hidden="true" />
+                WhatsApp
+              </CardTitle>
+              <CardDescription>
+                Get alerts on WhatsApp. The button opens a chat with our number and a one-time code already typed. Send it to
+                connect. Reply STOP anytime to disconnect.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3 pt-0">
+              {whatsAppNumbers.length > 0 ? (
+                <ul className="flex flex-col gap-1.5 text-sm">
+                  {whatsAppNumbers.map((number) => (
+                    <li key={number.id} className="flex items-center justify-between gap-2">
+                      <span>
+                        {number.label} <span className="text-xs text-muted-foreground">· linked {formatDate(number.createdAt)}</span>
+                      </span>
+                      {number.verified ? <Badge variant="success">Working</Badge> : <Badge variant="destructive">Needs attention</Badge>}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {whatsAppConfigured ? (
+                <div>
+                  <Button asChild size="sm">
+                    <a href="/api/integrations/whatsapp/connect?returnTo=/settings/connections">
+                      {whatsAppNumbers.length > 0 ? "Connect another number" : "Connect WhatsApp"}
+                    </a>
+                  </Button>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">WhatsApp isn&apos;t set up on this server.</p>
               )}
             </CardContent>
           </Card>
@@ -156,16 +197,15 @@ export default async function ConnectionsPage({ searchParams }: { searchParams: 
             </CardContent>
           </Card>
 
-          {/* Discord / Slack */}
+          {/* Slack */}
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <MessageSquare className="size-4 text-primary" aria-hidden="true" />
-                Discord and Slack channels
+                Slack channels
               </CardTitle>
               <CardDescription>
-                {discordCount > 0 ? `${discordCount} Discord webhook${discordCount === 1 ? "" : "s"} connected. ` : ""}
-                Discord webhooks and Slack channels are managed with your notification channels.
+                Connect your Slack workspace in Settings, then pick which channels get alerts in the Notification hub.
               </CardDescription>
             </CardHeader>
             <CardContent className="pt-0">

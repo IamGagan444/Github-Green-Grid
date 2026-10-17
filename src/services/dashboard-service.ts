@@ -291,6 +291,7 @@ export async function getUserDashboard(userId: string, timezone: string, now: Da
     connections: {
       telegram: workingChannels.some((channel) => channel.kind === "TELEGRAM"),
       discord: workingChannels.some((channel) => channel.kind === "DISCORD_WEBHOOK"),
+      whatsapp: workingChannels.some((channel) => channel.kind === "WHATSAPP"),
       googleSheets: google.canCreateSheets,
       googleEmail: google.canSendEmail,
       aiKey: aiKey > 0,

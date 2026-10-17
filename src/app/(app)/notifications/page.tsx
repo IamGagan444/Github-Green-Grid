@@ -3,7 +3,6 @@ import Link from "next/link";
 import { Activity, BellRing, GitBranch, History, Plus, RadioTower, RefreshCw, Send, Trash2, type LucideIcon } from "lucide-react";
 
 import {
-  addDiscordChannelAction,
   addEmailChannelAction,
   addSlackChannelAction,
   createGitHubRuleAction,
@@ -31,6 +30,7 @@ import { formatDateTime } from "@/lib/format";
 import { CHANNEL_KIND_LABELS } from "@/lib/hub/channel-config";
 import { EVENT_TYPE_LABELS, GITHUB_EVENT_TYPES, UPTIME_EVENT_TYPES } from "@/lib/hub/rules";
 import { isTelegramConfigured } from "@/lib/telegram/client";
+import { isWhatsAppConfigured } from "@/lib/whatsapp/client";
 import { cn } from "@/lib/utils";
 import { listChannels } from "@/services/channel-service";
 import { getGitHubIntegration } from "@/services/github-service";
@@ -96,7 +96,7 @@ export default async function NotificationsPage({ searchParams }: { searchParams
     <>
       <Header
         title="Notification hub"
-        description="Get GitHub and uptime alerts in Telegram, Discord, Slack or your inbox."
+        description="Get GitHub and uptime alerts in Telegram, WhatsApp, Slack or your inbox."
         actions={
           <Button asChild variant="outline" size="sm">
             <Link href="/notifications/uptime">Uptime monitors</Link>
@@ -384,14 +384,26 @@ export default async function NotificationsPage({ searchParams }: { searchParams
                   )}
                 </div>
 
-                <details className="rounded-md border border-border p-3">
-                  <summary className="cursor-pointer text-sm font-medium">Discord</summary>
-                  <ActionForm action={addDiscordChannelAction} submitLabel="Add Discord channel" pendingLabel="Testing…" resetOnSuccess className="mt-3">
-                    <Input name="label" placeholder="#alerts on my server" maxLength={60} required aria-label="Name" />
-                    <Input name="webhookUrl" placeholder="https://discord.com/api/webhooks/…" maxLength={300} required aria-label="Webhook URL" />
-                    <p className="text-xs text-muted-foreground">In Discord: Server settings → Integrations → Webhooks → New webhook, then copy its URL.</p>
-                  </ActionForm>
-                </details>
+                <div className="flex flex-col gap-2 rounded-md border border-border p-3">
+                  <p className="text-sm font-medium">WhatsApp</p>
+                  {isWhatsAppConfigured() ? (
+                    <>
+                      <p className="text-xs text-muted-foreground">
+                        Opens WhatsApp with a one-time code already typed. Send it and your number is connected.
+                      </p>
+                      <div>
+                        <Button asChild size="sm" variant="outline">
+                          <a href="/api/integrations/whatsapp/connect?returnTo=/notifications">
+                            <Plus aria-hidden="true" />
+                            Connect WhatsApp
+                          </a>
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">WhatsApp isn&apos;t set up on this server.</p>
+                  )}
+                </div>
 
                 <details className="rounded-md border border-border p-3">
                   <summary className="cursor-pointer text-sm font-medium">Slack</summary>

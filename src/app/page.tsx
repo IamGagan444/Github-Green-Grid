@@ -98,7 +98,7 @@ const PRODUCTS: Product[] = [
     points: [
       "Pull requests, failed checks, releases and issues",
       "One alert when a site goes down, not one every 15 minutes",
-      "Telegram, Discord, Slack or your own Gmail, all free",
+      "Telegram, WhatsApp, Slack or your own Gmail",
     ],
   },
 ];
