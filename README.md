@@ -14,6 +14,11 @@ work:
    a schedule, and GreenGrid performs a small, real repository maintenance
    update on the days you chose — one commit per run through GitHub's official
    REST API, attributed to your own GitHub account.
+3. **Notification hub.** Important alerts get lost across GitHub, email and
+   dashboards. The hub routes them into one chat: pull requests, review
+   requests, failed checks, releases, new issues and uptime alerts are sent to
+   Telegram, Discord, Slack or your own Gmail, by rules you define. Free
+   channels only — $0 per user and per message.
 
 You sign in with Google; GitHub and Slack are integrations you connect from
 Settings. Administrators get a separate panel for users, automations,
@@ -271,6 +276,75 @@ Telegram (Bot API), Discord webhooks, Slack, and the user's own Gmail
 (`gmail.send`). WhatsApp is never called — messages include `wa.me` links the
 owner taps to send.
 
+### Quick start
+
+1. **Add a channel.** On **Notifications** (`/notifications`), press
+   **Connect a Telegram chat**, then press **Start** in the bot chat that opens.
+   The bot replies "✅ Connected to GreenGrid as …". Discord webhooks, Slack
+   channels and email addresses are added from the same panel. Every channel is
+   sent a test message when it is added and must show **Working** before rules
+   can use it.
+2. **Link GitHub (for GitHub events).** Connect GitHub in Settings, then press
+   **Install on repositories** on the hub page and pick your repositories.
+   Press **Refresh** if the installation does not appear under *GitHub events*.
+3. **Create a rule.** Pick a source (GitHub or Uptime), the events, an
+   optional repository/monitor filter, and the channels to deliver to.
+4. **Watch deliveries.** *Recent deliveries* lists every event with a
+   per-channel result.
+
+### Automation examples
+
+**1. Pull request alerts in Telegram**
+
+| Field    | Value                                          |
+| -------- | ---------------------------------------------- |
+| Source   | GitHub                                         |
+| Events   | Pull request opened, Review requested          |
+| Filter   | All repositories (or pick `you/your-repo`)     |
+| Channels | Your Telegram chat                             |
+
+Open a pull request and, within seconds, the chat receives:
+
+```
+New pull request in IamGagan444/Github-Green-Grid
+#10 readme update
+Opened by IamGagan444 · gagan-update → main
+[Open pull request]
+```
+
+**2. CI failures to the team's Discord**
+
+| Field    | Value                                          |
+| -------- | ---------------------------------------------- |
+| Source   | GitHub                                         |
+| Events   | Checks failed                                  |
+| Filter   | `your-org/api`, `your-org/web`                 |
+| Channels | Discord webhook `#ci`, your Telegram chat      |
+
+A failing check suite posts "Checks failed in your-org/api" to both channels;
+a passing one sends nothing.
+
+**3. Release announcements**
+
+Source GitHub, event *Release published*, channel a Slack channel →
+"your-org/app v2.4.0 released".
+
+**4. Site-down alerts without spam**
+
+1. **Uptime monitors** (`/notifications/uptime`) → add
+   `https://example.com/health`.
+2. Rule: source Uptime, events *Site down*, *Site back up*, *TLS certificate
+   expiring*, channel Telegram.
+
+When the site goes down you get **one** "example.com is down" alert, and one
+"example.com is back up" when it recovers — not a message every 15 minutes.
+Certificates are warned about at 14 and 3 days before expiry.
+
+> Tip: keep one rule per event set. Two rules matching the same event both
+> deliver, so the alert arrives twice.
+
+### How it works
+
 ```
 GitHub App webhook ─┐                                                       ┌─ TelegramChannel (Bot API)
 Uptime checker ─────┼─► NotificationEvent ─► rules ─► WorkflowRun ─► steps ─┼─ DiscordWebhookChannel
@@ -389,21 +463,33 @@ sign-in — only the identity is stored.
 
 GitHub is an *integration*, connected from Settings after sign-in. A **GitHub
 App** is recommended (fine-grained, per-repository access and expiring,
-refreshable user tokens); a classic OAuth App also works.
+refreshable user tokens); a classic OAuth App also works for standups and
+commit schedules, but **the notification hub requires a GitHub App** — only
+App installations deliver repository webhooks and can be listed for a user.
 
 **GitHub App (recommended).** <https://github.com/settings/apps> → **New GitHub App**:
 
+- **Homepage URL:** `<NEXT_PUBLIC_APP_URL>`
 - **Callback URL:** `<NEXT_PUBLIC_APP_URL>/api/auth/github/callback`
 - **Request user authorization (OAuth) during installation:** on;
   **Expire user authorization tokens:** on (GreenGrid refreshes them).
+  Device flow and wildcard redirect matching: off.
+- **Webhook:** active, URL `<NEXT_PUBLIC_APP_URL>/api/webhooks/github`, secret
+  `GITHUB_WEBHOOK_SECRET` (see [GitHub App webhook setup](#github-app-webhook-setup)).
 - **Repository permissions:** *Contents: Read and write* (read commits for
   standups; write only for commit-activity schedules — use *Read-only* if you
-  do not use that feature), *Metadata: Read-only*.
+  do not use that feature), *Metadata: Read-only*, and for the notification
+  hub *Pull requests*, *Checks* and *Issues: Read-only*.
 - **Account permissions:** *Email addresses: Read-only*.
+- **Subscribe to events:** Pull request, Check suite, Release, Issues.
 - Install the App on the accounts/repositories users should be able to select,
-  and set `GITHUB_APP_SLUG` to show a "Manage repository access" link.
+  and set `GITHUB_APP_SLUG` (the part after `github.com/apps/`) to show the
+  "Install on repositories" / "Manage repository access" links.
 
-Copy the App's Client ID/secret into `GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET`.
+Copy the App's Client ID and a newly generated client secret into
+`GITHUB_CLIENT_ID` / `GITHUB_CLIENT_SECRET` (the private key is not needed).
+When switching from an OAuth App, users must disconnect and reconnect GitHub so
+their stored token comes from the App.
 The callback path is the same one earlier GreenGrid versions used, so an
 existing App keeps working.
 
@@ -503,6 +589,21 @@ source code — and only from the server.
    15 minutes, and only its SHA-256 is stored. Commands: `/start`, `/stop`
    (unlink), `/digest`, `/help`.
 
+**Troubleshooting**
+
+- *The bot never replies* — the webhook is not registered (deploying does not
+  register it). Check with
+  `https://api.telegram.org/bot<TOKEN>/getWebhookInfo`: an empty `url` means
+  step 3 was not run. `localhost` cannot receive webhooks; use your deployed
+  HTTPS URL or a tunnel.
+- *`last_error_message` shows 401* — `TELEGRAM_WEBHOOK_SECRET` on the server
+  differs from the one used when registering. *503* — the Telegram variables
+  are missing on the server (redeploy after adding them).
+- *Typing `/start` only shows the help text* — linking needs the token, so use
+  **Connect Telegram** in GreenGrid instead of typing the command.
+- *"That link has expired or was already used"* — press Connect Telegram again;
+  each link works once, within 15 minutes.
+
 ## Connect Google setup (Sheets and Gmail)
 
 "Connect Google" is separate from sign-in and reuses the same OAuth client.
@@ -545,6 +646,13 @@ Supported events: `pull_request.opened`, `pull_request.review_requested`,
 `check_suite.completed` with a failing conclusion, `release.published` and
 `issues.opened`. Signatures (`X-Hub-Signature-256`) are verified in constant
 time over the raw body, and `X-GitHub-Delivery` de-duplicates redeliveries.
+
+Only events that happen **after** the webhook is active are delivered — test
+with a new pull request, not an existing one. If nothing arrives, open the App's
+**Advanced → Recent Deliveries**: `401` means the secret in GitHub and
+`GITHUB_WEBHOOK_SECRET` differ, `503` means `GITHUB_WEBHOOK_SECRET` is not set,
+and `200` with no message means the installation is not linked to a user yet
+(press **Refresh** on the hub page).
 
 ## Upgrading an existing GreenGrid deployment
 
