@@ -34,7 +34,7 @@ export default async function AdminAutomationsPage({ searchParams }: { searchPar
   const { items, total } = await listAllAutomations({ status: query.status, page: query.page, pageSize: PAGE_SIZE });
 
   return (
-    <div className="flex flex-col gap-4 px-4 py-6 sm:px-6">
+    <div className="flex flex-col gap-5 px-4 py-6 sm:px-6">
       <div className="flex flex-wrap gap-2 text-sm">
         {[undefined, "ACTIVE", "PAUSED", "DISABLED"].map((status) => (
           <Link

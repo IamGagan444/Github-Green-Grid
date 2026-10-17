@@ -25,7 +25,7 @@ export default async function AdminExecutionDetailPage({ params }: { params: Pro
   }
 
   return (
-    <div className="flex flex-col gap-4 px-4 py-6 sm:px-6">
+    <div className="flex flex-col gap-5 px-4 py-6 sm:px-6">
       <div>
         <Link href="/admin/executions" className="text-xs text-muted-foreground hover:text-foreground">
           ← Executions

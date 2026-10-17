@@ -39,7 +39,7 @@ export default async function AdminUsersPage({ searchParams }: { searchParams: S
   });
 
   return (
-    <div className="flex flex-col gap-4 px-4 py-6 sm:px-6">
+    <div className="flex flex-col gap-5 px-4 py-6 sm:px-6">
       <form className="flex max-w-md gap-2" role="search">
         <input
           name="q"

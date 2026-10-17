@@ -46,7 +46,7 @@ export default async function InstagramAutomationPage({ params }: { params: Prom
         actions={<InstagramAutomationActions id={automation.id} name={automation.name} status={automation.status} />}
       />
 
-      <div className="flex flex-col gap-6 px-4 py-6 sm:px-6">
+      <div className="flex flex-col gap-5 px-4 py-6 sm:px-6">
         {accountDown ? (
           <p className="rounded-lg border border-destructive/40 bg-destructive/5 px-4 py-3 text-sm">
             @{automation.integration.username} is disconnected, so nothing is being sent.{" "}

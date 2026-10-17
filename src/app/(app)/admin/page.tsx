@@ -26,7 +26,7 @@ export default async function AdminOverviewPage() {
   const stats = await getAdminOverview(admin);
 
   return (
-    <div className="flex flex-col gap-6 px-4 py-6 sm:px-6">
+    <div className="flex flex-col gap-5 px-4 py-6 sm:px-6">
       <section aria-labelledby="users-heading">
         <h2 id="users-heading" className="mb-3 text-sm font-medium">Users</h2>
         <div className="grid gap-3 sm:grid-cols-3">

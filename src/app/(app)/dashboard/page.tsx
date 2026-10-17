@@ -187,7 +187,7 @@ async function DashboardBody({
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <ActivityFeed items={data.feed} timezone={timezone} />
 
-        <Card className="h-fit">
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between gap-3">
             <CardTitle>Connected accounts</CardTitle>
             <Button asChild variant="ghost" size="sm">

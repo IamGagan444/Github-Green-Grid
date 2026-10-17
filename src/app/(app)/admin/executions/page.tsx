@@ -28,7 +28,7 @@ export default async function AdminExecutionsPage({ searchParams }: { searchPara
   });
 
   return (
-    <div className="flex flex-col gap-4 px-4 py-6 sm:px-6">
+    <div className="flex flex-col gap-5 px-4 py-6 sm:px-6">
       <ExecutionFilters basePath="/admin/executions" />
       {result.items.length === 0 ? (
         <EmptyState icon={History} title="No executions match" />
