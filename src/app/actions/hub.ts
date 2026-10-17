@@ -17,7 +17,7 @@ import {
   testChannel,
 } from "@/services/channel-service";
 import { syncGitHubInstallations } from "@/services/github-webhook-service";
-import { createRule, deleteRule, setRuleEnabled } from "@/services/notification-service";
+import { createRule, deleteRule, setRuleEnabled, updateRule } from "@/services/notification-service";
 import { createMonitor, deleteMonitor, setMonitorEnabled } from "@/services/uptime-service";
 import "@/services/workflow-handlers";
 import { retryRun } from "@/services/workflow-service";
@@ -125,14 +125,13 @@ export async function createGitHubRuleAction(_previous: ActionState, formData: F
     const user = await hubUser();
     const fields = formFields(formData);
     const input = githubRuleSchema.parse({ ...fields, events: asArray(fields.events), channelIds: asArray(fields.channelIds) });
-    await createRule(user, {
-      name: input.name,
-      source: "GITHUB",
-      filter: { events: input.events, repositories: input.repositories },
-      channelIds: input.channelIds,
-    });
+    const rule = { name: input.name, source: "GITHUB" as const, filter: { events: input.events, repositories: input.repositories }, channelIds: input.channelIds };
+    // The same form edits a rule when it carries the rule's id.
+    const editing = typeof fields.ruleId === "string" && fields.ruleId ? idParamSchema.parse(fields.ruleId) : null;
+    if (editing) await updateRule(user, editing, rule);
+    else await createRule(user, rule);
     refresh();
-    return "Rule created.";
+    return editing ? "Rule saved." : "Rule created.";
   });
 }
 
@@ -153,14 +152,12 @@ export async function createUptimeRuleAction(_previous: ActionState, formData: F
       monitorIds: asArray(fields.monitorIds),
       channelIds: asArray(fields.channelIds),
     });
-    await createRule(user, {
-      name: input.name,
-      source: "UPTIME",
-      filter: { events: input.events, monitorIds: input.monitorIds },
-      channelIds: input.channelIds,
-    });
+    const rule = { name: input.name, source: "UPTIME" as const, filter: { events: input.events, monitorIds: input.monitorIds }, channelIds: input.channelIds };
+    const editing = typeof fields.ruleId === "string" && fields.ruleId ? idParamSchema.parse(fields.ruleId) : null;
+    if (editing) await updateRule(user, editing, rule);
+    else await createRule(user, rule);
     refresh();
-    return "Rule created.";
+    return editing ? "Rule saved." : "Rule created.";
   });
 }
 

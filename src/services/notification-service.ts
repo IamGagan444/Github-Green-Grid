@@ -151,6 +151,8 @@ export interface RuleView {
   source: NotificationSource;
   enabled: boolean;
   summary: string;
+  /** The validated filter, for pre-filling the edit form. */
+  filter: { events: string[]; repositories?: string[]; monitorIds?: string[] };
   channels: Array<{ id: string; label: string; kind: string; verified: boolean }>;
   createdAt: Date;
 }
@@ -175,6 +177,7 @@ export async function listRules(userId: string): Promise<RuleView[]> {
     source: rule.source,
     enabled: rule.enabled,
     summary: describeRuleFilter(rule.source, rule.filter),
+    filter: parseRuleFilter(rule.source, rule.filter) as RuleView["filter"],
     channels: rule.targets.map((target) => target.channel),
     createdAt: rule.createdAt,
   }));
@@ -219,6 +222,32 @@ async function ownedRule(actor: Actor, ruleId: string) {
   const rule = await prisma.notificationRule.findFirst({ where: { id: ruleId, userId: actor.userId }, select: { id: true } });
   if (!rule) throw new AppError("INTERNAL", "rule not found", { userMessage: "That rule was not found." });
   return rule;
+}
+
+/** Replaces a rule's name, filter and channels. The source (GitHub / Uptime) never changes. */
+export async function updateRule(
+  actor: Actor,
+  ruleId: string,
+  input: { name: string; source: NotificationSource; filter: unknown; channelIds: string[] },
+): Promise<void> {
+  const rule = await prisma.notificationRule.findFirst({ where: { id: ruleId, userId: actor.userId }, select: { id: true, source: true } });
+  if (!rule) throw new AppError("INTERNAL", "rule not found", { userMessage: "That rule was not found." });
+  if (rule.source !== input.source) throw new AppError("INTERNAL", "rule source mismatch", { userMessage: "A rule can't switch between GitHub and Uptime." });
+  const filter = parseRuleFilter(input.source, input.filter);
+  await assertOwnChannels(actor.userId, input.channelIds);
+
+  await prisma.$transaction([
+    prisma.notificationRuleTarget.deleteMany({ where: { ruleId: rule.id } }),
+    prisma.notificationRule.update({
+      where: { id: rule.id },
+      data: {
+        name: input.name.slice(0, 80),
+        filter: filter as Prisma.InputJsonValue,
+        targets: { create: [...new Set(input.channelIds)].map((channelId) => ({ channelId })) },
+      },
+    }),
+  ]);
+  await recordAudit({ actorUserId: actor.userId, action: "RULE_UPDATED", targetType: "NotificationRule", targetId: rule.id, metadata: { source: input.source } });
 }
 
 export async function setRuleEnabled(actor: Actor, ruleId: string, enabled: boolean): Promise<void> {
