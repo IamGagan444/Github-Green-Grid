@@ -4,6 +4,7 @@ import { localDayKey } from "@/lib/automation/schedule";
 import { prisma } from "@/lib/db";
 import { getGitHubIntegration } from "@/services/github-service";
 import { getGoogleIntegration } from "@/services/google-service";
+import { getLinkedInIntegration } from "@/services/linkedin-service";
 import { listInstagramIntegrations } from "@/services/instagram-service";
 import { listSlackIntegrations } from "@/services/slack-service";
 
@@ -59,6 +60,7 @@ export async function getUserDashboard(userId: string, timezone: string, now: Da
     monitorCount,
     google,
     aiKey,
+    linkedin,
   ] = await Promise.all([
     // One grouped count per product instead of separate total/active queries.
     prisma.automation.groupBy({ by: ["status"], where: { userId }, orderBy: { status: "asc" }, _count: { _all: true } }),
@@ -133,6 +135,7 @@ export async function getUserDashboard(userId: string, timezone: string, now: Da
     prisma.uptimeMonitor.count({ where: { userId, enabled: true } }),
     getGoogleIntegration(userId),
     prisma.aiCredential.count({ where: { userId } }),
+    getLinkedInIntegration(userId),
   ]);
 
   const count = (rows: Array<{ status: string; _count: { _all: number } | undefined }>, status?: string) =>
@@ -291,6 +294,7 @@ export async function getUserDashboard(userId: string, timezone: string, now: Da
       googleSheets: google.canCreateSheets,
       googleEmail: google.canSendEmail,
       aiKey: aiKey > 0,
+      linkedin: linkedin.canPost,
     },
     activeTotal: standupActive + instagramActive + scheduleEnabled + ruleCount,
     needsAttention:

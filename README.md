@@ -46,8 +46,10 @@ What GreenGrid explicitly does **not** do:
 - [Architecture](#architecture)
 - [Standup automations](#standup-automations)
 - [Notification hub](#notification-hub)
+- [Morning digest](#morning-digest)
 - [Forms → Google Sheet](#forms--google-sheet)
 - [Payment reminders](#payment-reminders)
+- [Cross-poster](#cross-poster)
 - [Roles and access control](#roles-and-access-control)
 - [Local development](#local-development)
 - [Google sign-in setup](#google-sign-in-setup)
@@ -402,6 +404,49 @@ history; **Uptime monitors** (`/notifications/uptime`); **Settings →
 Connections** (`/settings/connections`) for Telegram, Google, the AI key and
 today's free-tier usage.
 
+## Morning digest
+
+**Problem it fixes:** checking blogs, YouTube, GitHub releases and Hacker News
+one by one every morning. GreenGrid sends one short message with only what's
+new, to the channels you pick.
+
+Set it up at **Morning digest** (`/digest`):
+
+1. **When and where.** A time, the days, your time zone, and one or more
+   working channels (Telegram, WhatsApp, Slack or email).
+2. **Sources** (up to 10), all free public feeds, no API keys:
+
+   | Source          | What you paste                         | Read from                                |
+   | --------------- | -------------------------------------- | ---------------------------------------- |
+   | RSS / blog      | `https://example.com/feed.xml`         | the feed (RSS 2.0, RSS 1.0 or Atom)      |
+   | YouTube channel | `UC…` channel ID or `/channel/UC…` URL | `youtube.com/feeds/videos.xml`           |
+   | GitHub releases | `owner/repo`                           | `github.com/<owner>/<repo>/releases.atom` |
+   | Hacker News     | how many top stories (1–10)            | the official Firebase API                |
+
+   Each source is read once when added, so a wrong address fails right away.
+3. **Optional AI summary.** With your own AI key (Settings → Connections) the
+   digest starts with two to four sentences about the day's headlines. Only
+   titles are sent to the AI, framed as data. Without a key, or if the AI call
+   fails, the digest still arrives, just without the summary.
+
+**How it runs.** The hub cron (every 15 minutes) builds each digest whose time
+has come, up to three hours late; after that it waits for the next day.
+Feeds are fetched through `safeFetch` (public hosts only, 1 MB, 10 s) with
+`ETag` / `If-Modified-Since`. Each source contributes its newest five unseen
+items; everything currently in the feed is then marked seen (the newest 300
+hashes are kept), so a busy feed never builds a backlog. The digest becomes a
+workflow run keyed `digest:<user>:<day>:<time>`, so it is sent once per slot
+and retried per channel like any other alert. Items are only marked seen after
+that run exists. XML entities declared in a DOCTYPE are never expanded.
+
+**On demand.** **Send now** on the page, or `/digest` in the Telegram bot,
+sends one immediately (at most one per ten minutes). If nothing is new it says
+so instead of staying silent.
+
+**Test it:** add Hacker News (5) and a GitHub repo, pick Telegram, press
+**Send now** → the digest arrives with links. Press it again right away → "You
+just got one". Remove your AI key → the next digest arrives without the summary.
+
 ## Forms → Google Sheet
 
 **Problem it fixes:** form answers sit unread in an inbox, or in a tool you
@@ -469,6 +514,48 @@ Amounts are stored as integers in minor units and formatted per currency
 and number, due today → press **Remind now** → the email arrives in your
 inbox, and Telegram shows the copy with the WhatsApp button. Mark it paid →
 no more reminders.
+
+## Cross-poster
+
+**Problem it fixes:** after publishing a video or blog post, rewriting it for
+LinkedIn and telling everyone takes longer than it should. GreenGrid notices
+the new post, drafts the LinkedIn post and a short announcement, and posts
+when you tap Approve.
+
+1. **LinkedIn app (operator, once).** At <https://www.linkedin.com/developers/apps>
+   create an app, add the products **Sign In with LinkedIn using OpenID
+   Connect** and **Share on LinkedIn**, add the redirect URL
+   `<NEXT_PUBLIC_APP_URL>/api/integrations/linkedin/callback`, and set
+   `LINKEDIN_CLIENT_ID` / `LINKEDIN_CLIENT_SECRET`. Scopes requested:
+   `openid profile w_member_social`. Without it, the cross-poster still
+   announces on the user's own channels.
+2. **Connect LinkedIn** (Settings → Connections). Tokens last about 60 days;
+   the card shows when it expires and offers Reconnect.
+3. **Cross-poster** (`/crosspost`) → **Watch a source**: a YouTube channel ID
+   or a blog's RSS feed, where to post (LinkedIn and/or any of your channels),
+   and whether to ask first (default) or post automatically.
+
+**How it runs.** The hub cron polls each source every 30 minutes (conditional
+GET, the same fetcher as the digest; failing sources back off up to six
+hours). Only items published after the source was added are considered, at
+most three per poll, so adding a channel never floods LinkedIn. Each new item
+gets drafts from the user's own AI key (title only, framed as data, JSON
+output, with a plain fallback when there's no key or the reply is unusable).
+
+- **Ask first:** an approval card arrives in Telegram with the drafts and
+  **Approve** / **Reject** buttons, and the item waits on the page where the
+  drafts can be edited. Approval is a compare-and-swap, so two taps post once.
+  Only the owner's own linked chat can approve.
+- **Publish** is a `CROSSPOST_PUBLISH` run keyed `crosspost:<item>`:
+  `linkedin:post` is at-most-once (a post LinkedIn may have created is never
+  retried; only a definite 4xx is), then the announcement goes to each chosen
+  channel. Post text is escaped for LinkedIn's reserved characters, and the
+  link is attached as an article card.
+
+**Test it:** connect LinkedIn and Telegram, watch your own YouTube channel (or
+a blog you control), publish something → within 30 minutes an approval card
+arrives in Telegram → tap **Approve** → the post appears on your LinkedIn and
+the announcement in your channels.
 
 ## Roles and access control
 

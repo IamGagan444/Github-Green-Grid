@@ -249,6 +249,20 @@ export function getTelegramConfig(): TelegramConfig {
   return { botToken, botUsername, webhookSecret };
 }
 
+/**
+ * LinkedIn app with "Sign In with LinkedIn using OpenID Connect" and
+ * "Share on LinkedIn" products. Optional: without it the cross-poster can
+ * still announce on the user's own channels.
+ */
+export function getLinkedInConfig(): { clientId: string; clientSecret: string } {
+  const clientId = process.env.LINKEDIN_CLIENT_ID?.trim();
+  const clientSecret = process.env.LINKEDIN_CLIENT_SECRET?.trim();
+  if (!clientId || !clientSecret) {
+    throw new ConfigurationError("LinkedIn", [...(clientId ? [] : ["LINKEDIN_CLIENT_ID"]), ...(clientSecret ? [] : ["LINKEDIN_CLIENT_SECRET"])]);
+  }
+  return { clientId, clientSecret };
+}
+
 /** Secret configured on the GitHub App's webhook; verifies X-Hub-Signature-256. */
 export function getGitHubWebhookSecret(): string {
   const secret = process.env.GITHUB_WEBHOOK_SECRET?.trim();
@@ -289,6 +303,7 @@ export function getConfigurationStatus(): Record<string, boolean> {
     nvidiaApi: has("NVIDIA_API_KEY"),
     telegramBot: has("TELEGRAM_BOT_TOKEN") && has("TELEGRAM_BOT_USERNAME") && has("TELEGRAM_WEBHOOK_SECRET"),
     githubWebhook: has("GITHUB_WEBHOOK_SECRET"),
+    linkedIn: has("LINKEDIN_CLIENT_ID") && has("LINKEDIN_CLIENT_SECRET"),
     cronSecret: has("CRON_SECRET"),
     encryptionKey: has("ENCRYPTION_KEY") || has("GITHUB_TOKEN_ENCRYPTION_KEY"),
     distributedRateLimit: has("UPSTASH_REDIS_REST_URL") && has("UPSTASH_REDIS_REST_TOKEN"),

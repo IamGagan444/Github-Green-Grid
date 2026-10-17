@@ -57,6 +57,11 @@ export type AppErrorCode =
   | "GOOGLE_TOKEN_REVOKED"
   | "GOOGLE_PERMISSION_DENIED"
   | "GOOGLE_UNAVAILABLE"
+  | "LINKEDIN_OAUTH_FAILED"
+  | "LINKEDIN_NOT_CONNECTED"
+  | "LINKEDIN_TOKEN_REVOKED"
+  | "LINKEDIN_RATE_LIMITED"
+  | "LINKEDIN_UNAVAILABLE"
   | "URL_NOT_ALLOWED"
   | "FETCH_FAILED"
   | "STEP_OUTCOME_UNKNOWN"
@@ -188,6 +193,31 @@ const SPEC: Record<AppErrorCode, CodeSpec> = {
     message: "The AI returned a summary that failed validation, so nothing was posted.",
     retryable: true,
     httpStatus: 502,
+  },
+  LINKEDIN_OAUTH_FAILED: {
+    message: "LinkedIn could not complete the connection. Please try again.",
+    retryable: false,
+    httpStatus: 502,
+  },
+  LINKEDIN_NOT_CONNECTED: {
+    message: "Connect LinkedIn in Settings → Connections first.",
+    retryable: false,
+    httpStatus: 409,
+  },
+  LINKEDIN_TOKEN_REVOKED: {
+    message: "Your LinkedIn connection expired or was revoked. Reconnect LinkedIn in Settings → Connections.",
+    retryable: false,
+    httpStatus: 409,
+  },
+  LINKEDIN_RATE_LIMITED: {
+    message: "LinkedIn asked us to slow down. The post will be retried automatically.",
+    retryable: true,
+    httpStatus: 503,
+  },
+  LINKEDIN_UNAVAILABLE: {
+    message: "LinkedIn is temporarily unavailable. The post will be retried automatically.",
+    retryable: true,
+    httpStatus: 503,
   },
   AI_NOT_CONFIGURED: {
     message: "AI summaries are not configured on this server. Contact an administrator.",
