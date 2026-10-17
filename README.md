@@ -278,18 +278,20 @@ owner taps to send.
 
 ### Quick start
 
-1. **Add a channel.** On **Notifications** (`/notifications`), press
-   **Connect a Telegram chat**, then press **Start** in the bot chat that opens.
-   The bot replies "✅ Connected to GreenGrid as …". Discord webhooks, Slack
-   channels and email addresses are added from the same panel. Every channel is
-   sent a test message when it is added and must show **Working** before rules
-   can use it.
-2. **Link GitHub (for GitHub events).** Connect GitHub in Settings, then press
-   **Install on repositories** on the hub page and pick your repositories.
-   Press **Refresh** if the installation does not appear under *GitHub events*.
-3. **Create a rule.** Pick a source (GitHub or Uptime), the events, an
-   optional repository/monitor filter, and the channels to deliver to.
-4. **Watch deliveries.** *Recent deliveries* lists every event with a
+The hub page (`/notifications`) has four tabs — **Rules**, **Channels**,
+**GitHub** and **Activity** — selectable by link (`/notifications?tab=channels`).
+
+1. **Add a channel** (*Channels* tab). Press **Connect a Telegram chat**, then
+   press **Start** in the bot chat that opens. The bot replies "✅ Connected to
+   GreenGrid as …". Discord webhooks, Slack channels and email addresses are
+   added from the same tab. Every channel is sent a test message when it is
+   added and must show **Working** before rules can use it.
+2. **Link GitHub** (*GitHub* tab, for GitHub events). Connect GitHub in
+   Settings, then press **Install on repositories** and pick your
+   repositories. Press **Refresh** if the installation does not appear.
+3. **Create a rule** (*Rules* tab). Pick a source (GitHub or Uptime), the
+   events, an optional repository/monitor filter, and the channels to deliver to.
+4. **Watch deliveries** (*Activity* tab). Every event is listed with a
    per-channel result.
 
 ### Automation examples
