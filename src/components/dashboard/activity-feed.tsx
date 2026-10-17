@@ -14,21 +14,21 @@ const KIND: Record<ActivityKind, { label: string; icon: typeof Bot }> = {
   HUB: { label: "Notification hub", icon: BellRing },
 };
 
-/** Recent runs from every automation type, newest first. */
+/** Recent runs from every automation type, newest first. Fixed height; the list scrolls inside the card. */
 export function ActivityFeed({ items, timezone }: { items: ActivityItem[]; timezone: string }) {
   return (
-    <Card>
+    <Card className="flex h-[28rem] flex-col">
       <CardHeader>
         <CardTitle>Recent activity</CardTitle>
         <CardDescription>What your automations did recently.</CardDescription>
       </CardHeader>
-      <CardContent className="pt-0">
+      <CardContent className="min-h-0 flex-1 overflow-y-auto pt-0">
         {items.length === 0 ? (
           <EmptyState
             icon={History}
             title="Nothing has run yet"
-            description="Standup posts, Instagram DMs and commit activity show up here as they happen."
-            className="py-10"
+            description="Standup posts, Instagram DMs, commits and alerts show up here as they happen."
+            className="h-full py-10"
           />
         ) : (
           <ul className="-mx-2 divide-y divide-border">

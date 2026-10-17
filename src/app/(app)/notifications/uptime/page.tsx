@@ -40,7 +40,7 @@ export default async function UptimePage() {
         back={{ href: "/notifications", label: "Notification hub" }}
       />
 
-      <div className="flex max-w-4xl flex-col gap-5 px-4 py-6 sm:px-6">
+      <div className="flex flex-col gap-5 px-4 py-6 sm:px-6">
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">

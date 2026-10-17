@@ -32,7 +32,7 @@ export default async function AdminAuditLogsPage({ searchParams }: { searchParam
   const { items, total } = await listAuditLogs({ action: query.action, page: query.page, pageSize: PAGE_SIZE });
 
   return (
-    <div className="flex flex-col gap-4 px-4 py-6 sm:px-6">
+    <div className="flex flex-col gap-5 px-4 py-6 sm:px-6">
       <form className="flex gap-2">
         <select
           name="action"

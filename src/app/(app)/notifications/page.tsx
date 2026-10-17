@@ -187,7 +187,7 @@ export default async function NotificationsPage({ searchParams }: { searchParams
         ) : null}
 
         {activeTab === "new" ? (
-          <Card className="max-w-3xl">
+          <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Plus className="size-4 text-primary" aria-hidden="true" />
@@ -247,22 +247,28 @@ export default async function NotificationsPage({ searchParams }: { searchParams
                           .
                         </p>
                       ) : null}
-                      <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="gh-name">Name</Label>
-                        <Input id="gh-name" name="name" defaultValue="GitHub alerts" maxLength={80} required />
+                      <div className="grid gap-5 lg:grid-cols-2">
+                        <div className="flex min-w-0 flex-col gap-4">
+                          <div className="flex flex-col gap-1.5">
+                            <Label htmlFor="gh-name">Name</Label>
+                            <Input id="gh-name" name="name" defaultValue="GitHub alerts" maxLength={80} required />
+                          </div>
+                          <fieldset className="flex flex-col gap-1.5">
+                            <legend className="mb-1.5 text-sm font-medium">Events</legend>
+                            {GITHUB_EVENT_TYPES.map((type) => (
+                              <CheckboxField key={type} name="events" value={type} label={EVENT_TYPE_LABELS[type] ?? type} defaultChecked={type !== "issues.opened"} />
+                            ))}
+                          </fieldset>
+                        </div>
+                        <div className="flex min-w-0 flex-col gap-4">
+                          <div className="flex flex-col gap-1.5">
+                            <Label htmlFor="gh-repos">Repositories (optional)</Label>
+                            <Input id="gh-repos" name="repositories" placeholder="owner/repo, owner/other" maxLength={2000} />
+                            <p className="text-xs text-muted-foreground">Leave it blank to cover every repo the app can see.</p>
+                          </div>
+                          <ChannelPicker channels={verifiedChannels} />
+                        </div>
                       </div>
-                      <fieldset className="flex flex-col gap-1.5">
-                        <legend className="mb-1.5 text-sm font-medium">Events</legend>
-                        {GITHUB_EVENT_TYPES.map((type) => (
-                          <CheckboxField key={type} name="events" value={type} label={EVENT_TYPE_LABELS[type] ?? type} defaultChecked={type !== "issues.opened"} />
-                        ))}
-                      </fieldset>
-                      <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="gh-repos">Repositories (optional)</Label>
-                        <Input id="gh-repos" name="repositories" placeholder="owner/repo, owner/other" maxLength={2000} />
-                        <p className="text-xs text-muted-foreground">Leave it blank to cover every repo the app can see.</p>
-                      </div>
-                      <ChannelPicker channels={verifiedChannels} />
                     </ActionForm>
                   ) : (
                     <ActionForm
@@ -273,33 +279,39 @@ export default async function NotificationsPage({ searchParams }: { searchParams
                       resetOnSuccess
                       successHref={RULES_HREF}
                     >
-                      <div className="flex flex-col gap-1.5">
-                        <Label htmlFor="up-name">Name</Label>
-                        <Input id="up-name" name="name" defaultValue="Uptime alerts" maxLength={80} required />
+                      <div className="grid gap-5 lg:grid-cols-2">
+                        <div className="flex min-w-0 flex-col gap-4">
+                          <div className="flex flex-col gap-1.5">
+                            <Label htmlFor="up-name">Name</Label>
+                            <Input id="up-name" name="name" defaultValue="Uptime alerts" maxLength={80} required />
+                          </div>
+                          <fieldset className="flex flex-col gap-1.5">
+                            <legend className="mb-1.5 text-sm font-medium">Events</legend>
+                            {UPTIME_EVENT_TYPES.map((type) => (
+                              <CheckboxField key={type} name="events" value={type} label={EVENT_TYPE_LABELS[type] ?? type} defaultChecked />
+                            ))}
+                          </fieldset>
+                        </div>
+                        <div className="flex min-w-0 flex-col gap-4">
+                          {monitors.length > 0 ? (
+                            <fieldset className="flex flex-col gap-1.5">
+                              <legend className="mb-1.5 text-sm font-medium">Monitors (leave all unticked to cover every one)</legend>
+                              {monitors.map((monitor) => (
+                                <CheckboxField key={monitor.id} name="monitorIds" value={monitor.id} label={monitor.label} description={monitor.url} />
+                              ))}
+                            </fieldset>
+                          ) : (
+                            <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
+                              You aren&apos;t watching any sites yet.{" "}
+                              <Link href="/notifications/uptime" className="underline">
+                                Add one
+                              </Link>{" "}
+                              and this rule will cover it automatically.
+                            </p>
+                          )}
+                          <ChannelPicker channels={verifiedChannels} />
+                        </div>
                       </div>
-                      <fieldset className="flex flex-col gap-1.5">
-                        <legend className="mb-1.5 text-sm font-medium">Events</legend>
-                        {UPTIME_EVENT_TYPES.map((type) => (
-                          <CheckboxField key={type} name="events" value={type} label={EVENT_TYPE_LABELS[type] ?? type} defaultChecked />
-                        ))}
-                      </fieldset>
-                      {monitors.length > 0 ? (
-                        <fieldset className="flex flex-col gap-1.5">
-                          <legend className="mb-1.5 text-sm font-medium">Monitors (leave all unticked to cover every one)</legend>
-                          {monitors.map((monitor) => (
-                            <CheckboxField key={monitor.id} name="monitorIds" value={monitor.id} label={monitor.label} description={monitor.url} />
-                          ))}
-                        </fieldset>
-                      ) : (
-                        <p className="rounded-md border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
-                          You aren&apos;t watching any sites yet.{" "}
-                          <Link href="/notifications/uptime" className="underline">
-                            Add one
-                          </Link>{" "}
-                          and this rule will cover it automatically.
-                        </p>
-                      )}
-                      <ChannelPicker channels={verifiedChannels} />
                     </ActionForm>
                   )}
                 </>
@@ -425,7 +437,7 @@ export default async function NotificationsPage({ searchParams }: { searchParams
         ) : null}
 
         {activeTab === "github" ? (
-          <Card className="max-w-3xl">
+          <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <GitBranch className="size-4 text-primary" aria-hidden="true" />

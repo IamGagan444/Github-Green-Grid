@@ -16,7 +16,7 @@ export default async function AdminIntegrationsPage() {
   const { github, slack } = await listIntegrations(admin);
 
   return (
-    <div className="flex flex-col gap-6 px-4 py-6 sm:px-6">
+    <div className="flex flex-col gap-5 px-4 py-6 sm:px-6">
       <section className="flex flex-col gap-3" aria-labelledby="github-heading">
         <h2 id="github-heading" className="text-sm font-medium">GitHub ({github.length})</h2>
         <div className="overflow-x-auto rounded-xl border border-border scrollbar-subtle">

@@ -122,7 +122,7 @@ export default async function SettingsPage() {
           </ul>
         </nav>
 
-        <div className="flex w-full max-w-3xl flex-col gap-5">
+        <div className="flex w-full min-w-0 flex-col gap-5">
           {/* Profile */}
           <Card id="profile" className="scroll-mt-6">
             <CardHeader>
