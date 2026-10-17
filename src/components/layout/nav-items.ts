@@ -6,6 +6,7 @@ import {
   FileSpreadsheet,
   FolderGit2,
   History,
+  IndianRupee,
   LayoutDashboard,
   MessageCircle,
   Plug,
@@ -47,6 +48,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { href: "/notifications", label: "Notification hub", icon: BellRing },
       { href: "/notifications/uptime", label: "Uptime monitors", icon: Radar },
       { href: "/forms", label: "Forms", icon: FileSpreadsheet },
+      { href: "/reminders", label: "Payment reminders", icon: IndianRupee },
     ],
   },
   {

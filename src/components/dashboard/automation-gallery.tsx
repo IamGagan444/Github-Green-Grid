@@ -92,10 +92,10 @@ export function AutomationGallery({ connections, hubReady }: { connections: Gall
       description: "Polite reminders from your Gmail, plus a one-tap WhatsApp message and UPI link for you to send.",
       requirements: [
         { label: "Google (Gmail)", done: connections.googleEmail },
-        { label: "A channel for your copy", done: anyChannel },
+        { label: "A channel for your copy", done: anyChannel, optional: true },
       ],
-      href: null,
-      cta: "Coming soon",
+      href: "/reminders",
+      cta: "Chase a payment",
     },
   ];
 
