@@ -648,9 +648,9 @@ configured (never the values).
 ## Prisma migrations
 
 ```bash
-npx prisma generate          # regenerate the client after schema changes
-npx prisma migrate dev       # create + apply a migration in development
-npx prisma migrate deploy    # apply pending migrations in production
+npx prisma generate         
+npx prisma migrate dev       
+npx prisma migrate deploy   
 ```
 
 Migrations are committed under `prisma/migrations/`. On a fresh database,
