@@ -249,6 +249,53 @@ export function getTelegramConfig(): TelegramConfig {
   return { botToken, botUsername, webhookSecret };
 }
 
+export interface WhatsAppConfig {
+  /** Permanent system-user token from Meta Business settings. Sent only in the Authorization header. */
+  accessToken: string;
+  phoneNumberId: string;
+  /** The business number users message to link their phone, E.164 without spaces. */
+  businessNumber: string;
+  /** Verifies X-Hub-Signature-256 on webhook deliveries. */
+  appSecret: string;
+  /** Echoed back during Meta's webhook subscription handshake. */
+  webhookVerifyToken: string;
+  /** Approved utility template with two body parameters: {{1}} title, {{2}} details. */
+  templateName: string;
+  templateLanguage: string;
+  graphVersion: string;
+}
+
+/**
+ * WhatsApp Cloud API. Optional: business-initiated messages are billed by
+ * Meta per message, so the channel only appears when an operator configures it.
+ */
+export function getWhatsAppConfig(): WhatsAppConfig {
+  const read = (key: string) => process.env[key]?.trim() || undefined;
+  const accessToken = read("WHATSAPP_ACCESS_TOKEN");
+  const phoneNumberId = read("WHATSAPP_PHONE_NUMBER_ID");
+  const businessNumber = read("WHATSAPP_BUSINESS_NUMBER")?.replace(/[\s-]/g, "");
+  const appSecret = read("WHATSAPP_APP_SECRET");
+  const webhookVerifyToken = read("WHATSAPP_WEBHOOK_VERIFY_TOKEN");
+  const required = { WHATSAPP_ACCESS_TOKEN: accessToken, WHATSAPP_PHONE_NUMBER_ID: phoneNumberId, WHATSAPP_BUSINESS_NUMBER: businessNumber, WHATSAPP_APP_SECRET: appSecret, WHATSAPP_WEBHOOK_VERIFY_TOKEN: webhookVerifyToken };
+  const missing = Object.entries(required).filter(([, value]) => !value).map(([key]) => key);
+  if (missing.length > 0 || !accessToken || !phoneNumberId || !businessNumber || !appSecret || !webhookVerifyToken) {
+    throw new ConfigurationError("WhatsApp", missing);
+  }
+  if (!/^\+[1-9]\d{6,14}$/.test(businessNumber)) {
+    throw new ConfigurationError("WhatsApp", ["WHATSAPP_BUSINESS_NUMBER (E.164, e.g. +919876543210)"]);
+  }
+  return {
+    accessToken,
+    phoneNumberId,
+    businessNumber,
+    appSecret,
+    webhookVerifyToken,
+    templateName: read("WHATSAPP_TEMPLATE_NAME") ?? "greengrid_alert",
+    templateLanguage: read("WHATSAPP_TEMPLATE_LANGUAGE") ?? "en",
+    graphVersion: read("WHATSAPP_GRAPH_VERSION") ?? "v21.0",
+  };
+}
+
 /** Secret configured on the GitHub App's webhook; verifies X-Hub-Signature-256. */
 export function getGitHubWebhookSecret(): string {
   const secret = process.env.GITHUB_WEBHOOK_SECRET?.trim();
@@ -270,6 +317,11 @@ export function getQuotaCaps() {
     },
     EMAILS: { user: positiveInt(process.env.QUOTA_EMAILS_PER_USER, 100), global: null },
     TELEGRAM_MESSAGES: { user: positiveInt(process.env.QUOTA_TELEGRAM_PER_USER, 300), global: null },
+    // Paid per message, so both caps are deliberately low and operator-tunable.
+    WHATSAPP_MESSAGES: {
+      user: positiveInt(process.env.QUOTA_WHATSAPP_PER_USER, 20),
+      global: positiveInt(process.env.QUOTA_WHATSAPP_GLOBAL, 500),
+    },
   } as const;
 }
 
@@ -289,6 +341,12 @@ export function getConfigurationStatus(): Record<string, boolean> {
     nvidiaApi: has("NVIDIA_API_KEY"),
     telegramBot: has("TELEGRAM_BOT_TOKEN") && has("TELEGRAM_BOT_USERNAME") && has("TELEGRAM_WEBHOOK_SECRET"),
     githubWebhook: has("GITHUB_WEBHOOK_SECRET"),
+    whatsApp:
+      has("WHATSAPP_ACCESS_TOKEN") &&
+      has("WHATSAPP_PHONE_NUMBER_ID") &&
+      has("WHATSAPP_BUSINESS_NUMBER") &&
+      has("WHATSAPP_APP_SECRET") &&
+      has("WHATSAPP_WEBHOOK_VERIFY_TOKEN"),
     cronSecret: has("CRON_SECRET"),
     encryptionKey: has("ENCRYPTION_KEY") || has("GITHUB_TOKEN_ENCRYPTION_KEY"),
     distributedRateLimit: has("UPSTASH_REDIS_REST_URL") && has("UPSTASH_REDIS_REST_TOKEN"),

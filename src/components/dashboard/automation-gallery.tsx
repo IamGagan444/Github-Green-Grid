@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 export interface GalleryConnections {
   telegram: boolean;
   discord: boolean;
+  whatsapp: boolean;
   googleSheets: boolean;
   googleEmail: boolean;
   aiKey: boolean;
@@ -34,15 +35,15 @@ interface GalleryItem {
 
 /** The five free automations built on the notification hub, with the connections each one needs. */
 export function AutomationGallery({ connections, hubReady }: { connections: GalleryConnections; hubReady: boolean }) {
-  const anyChannel = connections.telegram || connections.discord || connections.slack || connections.googleEmail;
+  const anyChannel = connections.telegram || connections.whatsapp || connections.discord || connections.slack || connections.googleEmail;
   const items: GalleryItem[] = [
     {
       id: "hub",
       icon: BellRing,
       title: "Notification hub",
-      description: "GitHub PRs, failed checks, releases and uptime alerts, routed to Telegram, Discord, Slack or email.",
+      description: "GitHub PRs, failed checks, releases and uptime alerts, routed to Telegram, WhatsApp, Slack or email.",
       requirements: [
-        { label: "A channel (Telegram, Discord, Slack or email)", done: anyChannel },
+        { label: "A channel (Telegram, WhatsApp, Slack or email)", done: anyChannel },
         { label: "GitHub App installed (for GitHub events)", done: connections.github, optional: true },
       ],
       href: hubReady ? "/notifications?tab=rules" : "/notifications?tab=channels",
@@ -64,7 +65,7 @@ export function AutomationGallery({ connections, hubReady }: { connections: Gall
       id: "crosspost",
       icon: Repeat2,
       title: "Cross-poster",
-      description: "New YouTube video or blog post → AI-drafted posts for LinkedIn, Telegram and Discord, with approval.",
+      description: "New YouTube video or blog post → AI-drafted posts for LinkedIn, Telegram and Slack, with approval.",
       requirements: [
         { label: "Telegram (for approvals)", done: connections.telegram },
         { label: "LinkedIn", done: false },

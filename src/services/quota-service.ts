@@ -4,6 +4,7 @@ import type { QuotaScope } from "@/generated/prisma/enums";
 import { prisma } from "@/lib/db";
 import { getQuotaCaps } from "@/lib/env";
 import { quotaDay, reserveQuota, type QuotaStore, type Reservation } from "@/lib/quota/quota";
+import { isWhatsAppConfigured } from "@/lib/whatsapp/client";
 
 /** Postgres-backed quota counters; the WHERE clause makes each increment a compare-and-swap. */
 export const prismaQuotaStore: QuotaStore = {
@@ -48,12 +49,14 @@ const LABELS: Record<QuotaScope, string> = {
   YOUTUBE_UNITS: "YouTube API units today",
   EMAILS: "Emails sent today",
   TELEGRAM_MESSAGES: "Telegram messages today",
+  WHATSAPP_MESSAGES: "WhatsApp messages today",
 };
 
 /** The user's usage of each metered quota, for the free-tier meters in the UI. */
 export async function getUsageMeters(userId: string, now = new Date()): Promise<UsageMeter[]> {
   const caps = getQuotaCaps();
-  const scopes = Object.keys(caps) as QuotaScope[];
+  // WhatsApp is optional; its meter only makes sense where it can be used.
+  const scopes = (Object.keys(caps) as QuotaScope[]).filter((scope) => scope !== "WHATSAPP_MESSAGES" || isWhatsAppConfigured());
   return Promise.all(
     scopes.map(async (scope) => ({
       scope,

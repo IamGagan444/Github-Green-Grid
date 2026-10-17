@@ -17,8 +17,8 @@ work:
 3. **Notification hub.** Important alerts get lost across GitHub, email and
    dashboards. The hub routes them into one chat: pull requests, review
    requests, failed checks, releases, new issues and uptime alerts are sent to
-   Telegram, Discord, Slack or your own Gmail, by rules you define. Free
-   channels only — $0 per user and per message.
+   Telegram, WhatsApp, Slack or your own Gmail, by rules you define. All
+   channels are free except WhatsApp, which is optional and billed by Meta.
 
 You sign in with Google; GitHub and Slack are integrations you connect from
 Settings. Administrators get a separate panel for users, automations,
@@ -54,6 +54,7 @@ What GreenGrid explicitly does **not** do:
 - [Slack app setup](#slack-app-setup)
 - [NVIDIA API setup](#nvidia-api-setup)
 - [Telegram bot setup](#telegram-bot-setup)
+- [WhatsApp setup (optional, paid)](#whatsapp-setup-optional-paid)
 - [Connect Google setup (Sheets and Gmail)](#connect-google-setup-sheets-and-gmail)
 - [GitHub App webhook setup](#github-app-webhook-setup)
 - [Upgrading an existing GreenGrid deployment](#upgrading-an-existing-greengrid-deployment)
@@ -270,11 +271,13 @@ integration to `REVOKED` and the UI asks the user to reconnect.
 
 ## Notification hub
 
-A generic "event in → rules → message out" engine that the free automations
-share. It runs at **$0 per user and per message**: messages go only through
-Telegram (Bot API), Discord webhooks, Slack, and the user's own Gmail
-(`gmail.send`). WhatsApp is never called — messages include `wa.me` links the
-owner taps to send.
+A generic "event in → rules → message out" engine that the automations share.
+Users pick where alerts go: Telegram (Bot API), WhatsApp (Cloud API), Slack,
+or their own Gmail (`gmail.send`). Every channel except WhatsApp is **$0 per
+user and per message**; WhatsApp is optional, appears only when an operator
+configures it, and is capped per day (see
+[WhatsApp setup](#whatsapp-setup-optional-paid)). Discord webhooks still
+deliver for channels added earlier but can no longer be added.
 
 ### Quick start
 
@@ -284,7 +287,8 @@ The hub page (`/notifications`) has five tabs: **Rules**, **New rule**,
 
 1. **Add a channel** (*Channels* tab). Press **Connect a Telegram chat**, then
    press **Start** in the bot chat that opens. The bot replies "✅ Connected to
-   GreenGrid as …". Discord webhooks, Slack channels and email addresses are
+   GreenGrid as …". **Connect WhatsApp** works the same way: it opens WhatsApp
+   with a code already typed; send it. Slack channels and email addresses are
    added from the same tab. Every channel is sent a test message when it is
    added and must show **Working** before rules can use it.
 2. **Link GitHub** (*GitHub* tab, for GitHub events). Connect GitHub in
@@ -316,14 +320,14 @@ Opened by IamGagan444 · gagan-update → main
 [Open pull request]
 ```
 
-**2. CI failures to the team's Discord**
+**2. CI failures to the team's Slack**
 
 | Field    | Value                                          |
 | -------- | ---------------------------------------------- |
 | Source   | GitHub                                         |
 | Events   | Checks failed                                  |
 | Filter   | `your-org/api`, `your-org/web`                 |
-| Channels | Discord webhook `#ci`, your Telegram chat      |
+| Channels | Slack `#ci`, your WhatsApp                     |
 
 A failing check suite posts "Checks failed in your-org/api" to both channels;
 a passing one sends nothing.
@@ -351,9 +355,10 @@ Certificates are warned about at 14 and 3 days before expiry.
 
 ```
 GitHub App webhook ─┐                                                       ┌─ TelegramChannel (Bot API)
-Uptime checker ─────┼─► NotificationEvent ─► rules ─► WorkflowRun ─► steps ─┼─ DiscordWebhookChannel
+Uptime checker ─────┼─► NotificationEvent ─► rules ─► WorkflowRun ─► steps ─┼─ WhatsAppChannel (Cloud API, paid)
 (forms, reminders,  │   (unique key)        (Zod)    (lease, retry)        ├─ SlackChannel → SlackPort
- digest, cross-post)┘                                                       └─ EmailChannel → Gmail
+ digest, cross-post)┘                                                       ├─ EmailChannel → Gmail
+                                                                            └─ DiscordWebhookChannel (legacy)
 ```
 
 - **Events** (`notification_events`) are stored once per idempotency key
@@ -608,6 +613,50 @@ source code — and only from the server.
 - *"That link has expired or was already used"* — press Connect Telegram again;
   each link works once, within 15 minutes.
 
+## WhatsApp setup (optional, paid)
+
+WhatsApp is the one channel that costs money: Meta bills every
+business-initiated message (in India roughly ₹0.12–0.80 per utility message).
+It stays hidden until the variables below are set, and daily caps
+(`QUOTA_WHATSAPP_PER_USER`, default 20; `QUOTA_WHATSAPP_GLOBAL`, default 500)
+stop costs from running away.
+
+1. **Meta app and number.** At <https://developers.facebook.com/apps> create an
+   app of type *Business*, add the **WhatsApp** product and register a phone
+   number. Add a payment method in WhatsApp Manager.
+2. **Permanent token.** Business settings → System users → add a system user,
+   assign the WhatsApp account, generate a token with `whatsapp_business_messaging`
+   and `whatsapp_business_management`. Set `WHATSAPP_ACCESS_TOKEN`,
+   `WHATSAPP_PHONE_NUMBER_ID` and `WHATSAPP_BUSINESS_NUMBER` (E.164).
+3. **Message template.** WhatsApp Manager → Message templates → create
+   `greengrid_alert`, category **Utility**, language English (`en`):
+
+   ```
+   {{1}}
+
+   {{2}}
+
+   Sent by GreenGrid. Reply STOP to stop these alerts.
+   ```
+
+   Wait for approval. Use other values in `WHATSAPP_TEMPLATE_NAME` /
+   `WHATSAPP_TEMPLATE_LANGUAGE` if you name it differently.
+4. **Webhook.** App → WhatsApp → Configuration → callback URL
+   `<NEXT_PUBLIC_APP_URL>/api/webhooks/whatsapp`, verify token =
+   `WHATSAPP_WEBHOOK_VERIFY_TOKEN`, then subscribe to the **messages** field.
+   Set `WHATSAPP_APP_SECRET` (App → Settings → Basic) so signatures verify.
+5. Redeploy. **Connect WhatsApp** now appears under Channels.
+
+**How linking works.** The button opens `wa.me/<business number>` with a
+single-use code already typed (`GG-XXXXXXXXXX`, 15 minutes, only its SHA-256
+stored). Sending it proves the user owns the number and opens WhatsApp's free
+24-hour service window, so the "Connected" reply costs nothing. Replying
+**STOP** removes the channel. Alerts themselves use the approved template.
+
+**Click-to-send stays free.** Messages meant for *other people* (payment
+reminders to customers) don't use the API at all: they carry a `wa.me` button
+the owner taps to send from their own WhatsApp.
+
 ## Connect Google setup (Sheets and Gmail)
 
 "Connect Google" is separate from sign-in and reuses the same OAuth client.
@@ -730,6 +779,7 @@ the offending keys and never their values.
 | `GITHUB_APP_SLUG`             |    —     | Enables the "Manage repository access" link.                            |
 | `GITHUB_WEBHOOK_SECRET`       |    —     | Enables GitHub notifications (`/api/webhooks/github`).                  |
 | `TELEGRAM_BOT_TOKEN` / `_BOT_USERNAME` / `_WEBHOOK_SECRET` | — | Telegram bot for the notification hub. |
+| `WHATSAPP_ACCESS_TOKEN` / `_PHONE_NUMBER_ID` / `_BUSINESS_NUMBER` / `_APP_SECRET` / `_WEBHOOK_VERIFY_TOKEN` | — | Optional, paid WhatsApp channel. See [WhatsApp setup](#whatsapp-setup-optional-paid). |
 | `QUOTA_*`                     |    —     | Override the daily free-tier caps (see `.env.example`).                 |
 | `SLACK_CLIENT_ID` / `_SECRET` |  Slack   | Slack app credentials. Without them, Slack features are disabled.       |
 | `SLACK_SIGNING_SECRET`        |    —     | Enables the signed Events endpoint.                                     |
